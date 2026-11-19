@@ -23,6 +23,7 @@ platform paths, secrets loading, secret-scan script, GitHub Actions CI (Ubuntu +
 connectivity probe script, these docs.
 
 Acceptance criteria:
+
 - [ ] `npm ci && npm run typecheck && npm run lint && npm test && npm run build` pass locally on Windows **and** in CI on Ubuntu.
 - [ ] Config loads from the platform config dir, is validated, and invalid config gives a precise error (tested).
 - [ ] Secrets load from env / `secrets.env`; a world-readable `secrets.env` triggers a warning (tested on Linux CI); secrets are redacted in logs (tested).
@@ -39,9 +40,10 @@ agent loop (without tools yet beyond a no-op test tool), cancellation, budgets, 
 log of model calls, structured error reporting.
 
 Acceptance criteria:
+
 - [ ] Chat works end-to-end with streaming from at least one real cloud provider and from Ollama (manual check recorded).
 - [ ] Provider adapter covered by tests against a local fake server: streaming, tool-call deltas, usage, each error kind, timeouts, `Retry-After`.
-- [ ] Router tests: retry only before first token, fallback order, circuit breaker, `local-only` data never routed to a cloud entry.
+- [ ] Router tests: retry only before first token, fallback order, circuit breaker, `local_only` data never routed to a cloud entry.
 - [ ] Killing the network mid-stream yields a clear error in UI/CLI within the configured timeout, no hang (test + manual).
 - [ ] Conversations and tasks survive `amosd` restart (test).
 - [ ] Cancelling a task stops the model stream within 2 s (test).
@@ -55,6 +57,7 @@ with command classifier and process-group cancellation, bubblewrap adapter (Linu
 trash, taint tracking, kill switch, final reports with evidence.
 
 Acceptance criteria:
+
 - [ ] Path guard test suite: `..` traversal, symlink escape, absolute paths, case-insensitivity on Windows, Unicode names — all denied/allowed correctly.
 - [ ] Hard denies (`~/.ssh`, keyrings, `secrets.env`, `.env*`) cannot be overridden by config from a skill (test).
 - [ ] Every write creates a backup; `amos undo <task>` restores byte-identical originals (test).
@@ -80,6 +83,7 @@ extraction, web fetch tool (+ Playwright with system browser if needed), REA inv
 integration.
 
 Acceptance criteria:
+
 - [ ] Installing a skill shows its requested permissions; a modified skill requires re-approval (test).
 - [ ] MCP server tools appear namespaced, default to `ask`, and a crashing MCP server doesn't crash `amosd` (test).
 - [ ] Fetched web content taints the task (test).
@@ -93,10 +97,11 @@ FTS5 — verify availability in `node:sqlite`), optional embeddings (local or Ch
 provider), memory items (create/inspect/edit/delete), course organisation.
 
 Acceptance criteria:
+
 - [ ] Only explicitly added sources are indexed (test); removing a source removes its chunks (test).
 - [ ] Every memory item is visible and deletable in the UI; deletion is real (test).
 - [ ] Retrieval quality checked on a small labelled set of questions from real notes.
-- [ ] `local-only` sources never reach a cloud model through retrieval (test).
+- [ ] `local_only` sources never reach a cloud model through retrieval (test).
 - [ ] Ingestion works offline.
 
 ## M5 — Remote access
@@ -106,6 +111,7 @@ remote dashboard (mobile-friendly), stronger auth (passkey or TOTP + device toke
 task monitoring.
 
 Acceptance criteria:
+
 - [ ] No AMOS port reachable from the public internet (verified with an external scan).
 - [ ] Remote access works from a phone on a different network (manual, recorded).
 - [ ] Approvals of high-risk actions from remote require re-authentication (test).
@@ -117,6 +123,7 @@ Scope: systemd user service, log rotation, DB backup/restore, update + rollback,
 secrets, performance tuning, security hardening review, installation and troubleshooting docs.
 
 Acceptance criteria:
+
 - [ ] Survives reboot, crash (auto-restart), suspend/resume, network change (manual on laptop).
 - [ ] Update and rollback tested on the laptop.
 - [ ] Restore from backup tested.
