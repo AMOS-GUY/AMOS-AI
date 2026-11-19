@@ -226,6 +226,14 @@ describe("FileSink", () => {
     expect(JSON.parse(active[active.length - 1] as string).msg).toContain("message number 39");
   });
 
+  it("with maxFiles = 1, truncates instead of keeping rotated files", () => {
+    const dir = tempDir();
+    const sink = new FileSink({ dir, maxBytes: 120, maxFiles: 1 });
+    for (let i = 0; i < 10; i++) sink.write(record(`line ${i} ${"y".repeat(40)}`));
+    expect(fs.readdirSync(dir)).toEqual(["amos.log"]);
+    expect(fs.readFileSync(sink.file, "utf8")).toContain("line 9");
+  });
+
   it("appends to an existing file across restarts", () => {
     const dir = tempDir();
     new FileSink({ dir, maxBytes: 10_000, maxFiles: 2 }).write(record("first"));

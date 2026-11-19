@@ -1,8 +1,12 @@
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
+import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { formatTable, probe } from "../scripts/probe-connectivity.ts";
 import { RULES, scanRepository, scanText } from "../scripts/secret-scan.ts";
+import { tempDir } from "./helpers.ts";
 
 // Fake credentials are assembled at runtime so this file never contains a literal match.
 const fake = {
@@ -117,5 +121,32 @@ describe("connectivity probe", () => {
       },
     ]);
     expect(table).toBe("[OK  ] a   200 in 20 ms (dns 1 ms)\n[FAIL] bb  timeout");
+  });
+});
+
+describe("clean script", () => {
+  const run = (cwd: string, ...args: string[]) =>
+    spawnSync(process.execPath, [path.resolve("scripts/clean.ts"), ...args], {
+      cwd,
+      encoding: "utf8",
+    });
+
+  it("removes a directory inside the working directory", () => {
+    const root = tempDir();
+    fs.mkdirSync(path.join(root, "dist", "x"), { recursive: true });
+    expect(run(root, "dist").status).toBe(0);
+    expect(fs.existsSync(path.join(root, "dist"))).toBe(false);
+  });
+
+  it.each(["..", ".", "../outside"])("refuses %s and deletes nothing", (target) => {
+    const parent = tempDir();
+    const root = path.join(parent, "repo");
+    fs.mkdirSync(path.join(root, "keep"), { recursive: true });
+    fs.mkdirSync(path.join(parent, "outside"));
+    const result = run(root, target);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("refusing");
+    expect(fs.existsSync(path.join(root, "keep"))).toBe(true);
+    expect(fs.existsSync(path.join(parent, "outside"))).toBe(true);
   });
 });

@@ -240,7 +240,7 @@ describe("config/config.example.yaml", () => {
     };
     lines[start("providers: {}")] = "";
     uncomment(start("# example (used from M1"));
-    lines[lines.findIndex((l) => l === "  directories: []")] = "";
+    lines[lines.indexOf("  directories: []")] = "";
     uncomment(lines.findIndex((l) => l.includes("# directories:")));
     const config = validateConfig(parseYamlConfig(lines.join("\n"), "example"), "example");
     expect(Object.keys(config.providers).sort()).toEqual(["deepseek", "ollama"]);
