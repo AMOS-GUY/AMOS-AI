@@ -109,9 +109,12 @@ describe("amos CLI", () => {
 });
 
 describe("doctor checks", () => {
-  it("requires Node 24+", () => {
+  it("requires the tested Node 24 minimum", () => {
     expect(checkNode("v24.18.0").status).toBe("ok");
+    expect(checkNode("v24.22.1").status).toBe("ok");
     expect(checkNode("v26.1.0").status).toBe("ok");
+    expect(checkNode("v24.17.9").status).toBe("fail");
+    expect(checkNode("v24.2.0").status).toBe("fail");
     expect(checkNode("v22.12.0").status).toBe("fail");
     expect(checkNode("garbage").status).toBe("fail");
   });

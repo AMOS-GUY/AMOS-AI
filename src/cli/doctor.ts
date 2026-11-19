@@ -31,7 +31,12 @@ export interface DoctorInputs {
   readonly findTool?: (command: string, args: readonly string[]) => string | null;
 }
 
-export const MIN_NODE_MAJOR = 24;
+/**
+ * Oldest Node release AMOS has been tested on. Hard floor: 24.2.0 (import.meta.main); node:sqlite
+ * is "release candidate" stability in Node 24, so we only claim versions we actually ran.
+ * Must match package.json "engines" (checked by tests/version.test.ts).
+ */
+export const MIN_NODE_VERSION = "24.18.0";
 
 export function runDoctor(inputs: DoctorInputs): CheckResult[] {
   const findTool = inputs.findTool ?? defaultFindTool;
@@ -49,13 +54,14 @@ export function runDoctor(inputs: DoctorInputs): CheckResult[] {
 }
 
 export function checkNode(version: string): CheckResult {
-  const major = Number(/^v?(\d+)/.exec(version)?.[1] ?? Number.NaN);
-  return major >= MIN_NODE_MAJOR
+  const parsed = parseVersion(version);
+  const min = parseVersion(MIN_NODE_VERSION) as readonly number[];
+  return parsed && compareVersions(parsed, min) >= 0
     ? { name: "node", status: "ok", detail: version }
     : {
         name: "node",
         status: "fail",
-        detail: `${version} is too old; AMOS needs Node ${MIN_NODE_MAJOR} LTS or newer.`,
+        detail: `${version} is not supported; AMOS needs Node ${MIN_NODE_VERSION} or newer (24 LTS line).`,
       };
 }
 
@@ -206,6 +212,19 @@ function nearestExisting(dir: string): string | null {
     if (parent === current) return null;
     current = parent;
   }
+}
+
+function parseVersion(version: string): number[] | null {
+  const m = /^v?(\d+)\.(\d+)\.(\d+)/.exec(version);
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+}
+
+function compareVersions(a: readonly number[], b: readonly number[]): number {
+  for (let i = 0; i < 3; i++) {
+    const d = (a[i] ?? 0) - (b[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
 }
 
 export function formatResults(results: readonly CheckResult[]): string {

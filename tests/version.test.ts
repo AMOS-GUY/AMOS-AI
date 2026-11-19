@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { describe, expect, it } from "vitest";
+import { MIN_NODE_VERSION } from "../src/cli/doctor.ts";
 import { VERSION } from "../src/version.ts";
 
 describe("project metadata", () => {
@@ -16,8 +17,9 @@ describe("project metadata", () => {
     }
   });
 
-  it("matches the Node major in .nvmrc with engines", () => {
+  it("keeps .nvmrc, engines and the doctor minimum consistent", () => {
     const nvm = fs.readFileSync(".nvmrc", "utf8").trim();
-    expect(pkg.engines.node).toBe(`>=${nvm}.0.0`);
+    expect(pkg.engines.node).toBe(`>=${MIN_NODE_VERSION}`);
+    expect(MIN_NODE_VERSION.startsWith(`${nvm}.`)).toBe(true);
   });
 });
