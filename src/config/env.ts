@@ -20,7 +20,6 @@ export const KNOWN_AMOS_VARIABLES: ReadonlySet<string> = new Set([
   "AMOS_CONFIG_DIR",
   "AMOS_DATA_DIR",
   "AMOS_STATE_DIR",
-  "AMOS_TEST",
 ]);
 
 export interface EnvOverrides {

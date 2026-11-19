@@ -4,8 +4,8 @@ export default defineConfig({
   test: {
     include: ["src/**/*.test.ts", "tests/**/*.test.ts"],
     environment: "node",
-    // Tests must never reach the network or the real user config.
-    env: { AMOS_TEST: "1" },
+    // Tests pass explicit temporary directories (AMOS_CONFIG_DIR etc.) to the code under test and
+    // never read the developer's real config, secrets or data directories.
     restoreMocks: true,
   },
 });
