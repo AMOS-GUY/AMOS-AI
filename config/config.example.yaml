@@ -1,0 +1,56 @@
+# AMOS AI configuration — copy to your config directory as config.yaml
+# (run `amos paths` to see where that is). Every setting is optional; the values shown are the
+# defaults unless marked "example". Unknown keys are rejected so typos don't go unnoticed.
+#
+# NEVER put API keys here. Put them in secrets.env (same directory, owner-only permissions) and
+# reference them by name with apiKeyEnv.
+
+logging:
+  level: info # debug | info | warn | error   (env: AMOS_LOG_LEVEL)
+  file:
+    enabled: true # (env: AMOS_LOG_FILE)
+    maxBytes: 5242880 # rotate at 5 MiB
+    maxFiles: 5 # keep amos.log + 4 rotated files
+
+server: # used from M1; loopback only — other addresses are rejected
+  host: 127.0.0.1
+  port: 47821 # (env: AMOS_PORT)
+
+network:
+  offline: false # true = never contact the network (env: AMOS_OFFLINE)
+  connectTimeoutMs: 10000
+  requestTimeoutMs: 120000
+
+privacy:
+  defaultLabel: personal # label for your files outside the directories below
+  directories: []
+  # example:
+  # directories:
+  #   - path: ~/Documents/private
+  #     label: local_only   # only ever sent to local models
+  #   - path: ~/src/open-source
+  #     label: public
+
+providers: {}
+# example (used from M1; nothing contacts these in M0):
+# providers:
+#   deepseek:
+#     kind: openai-compatible
+#     baseUrl: https://api.deepseek.com
+#     apiKeyEnv: DEEPSEEK_API_KEY       # the value lives in secrets.env
+#     location: cloud
+#     models:
+#       deepseek-chat:
+#         contextWindow: 65536
+#         maxOutputTokens: 8192
+#         toolCalling: native
+#         structuredOutput: json_object
+#   ollama:
+#     kind: openai-compatible
+#     baseUrl: http://127.0.0.1:11434/v1
+#     location: local
+#     models:
+#       qwen2.5:7b:
+#         contextWindow: 32768
+#         maxOutputTokens: 4096
+#         toolCalling: native
