@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { KNOWN_AMOS_VARIABLES } from "../config/env.ts";
 import { loadConfig } from "../config/load.ts";
@@ -184,6 +185,10 @@ function sandboxCheck(
 function defaultFindTool(command: string, args: readonly string[]): string | null {
   try {
     const out = execFileSync(command, args, {
+      // Windows searches the working directory before PATH when launching a program. Running
+      // from the home directory means `amos doctor` inside an untrusted repository cannot be
+      // tricked into executing a planted git.exe / python.exe.
+      cwd: os.homedir(),
       encoding: "utf8",
       timeout: 5000,
       stdio: ["ignore", "pipe", "pipe"],

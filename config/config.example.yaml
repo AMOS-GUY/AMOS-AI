@@ -24,6 +24,8 @@ network:
 privacy:
   defaultLabel: personal # label for your files outside the directories below
   directories: []
+  # Path handling (~ expansion, symlink resolution) arrives with the M2 path guard;
+  # until then these entries are validated and stored only.
   # example:
   # directories:
   #   - path: ~/Documents/private

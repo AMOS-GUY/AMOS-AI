@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { tempDir } from "../../tests/helpers.ts";
 import { AmosError } from "../core/errors.ts";
 import { readEnvOverrides } from "./env.ts";
-import { deepMerge, loadConfig, validateConfig } from "./load.ts";
+import { deepMerge, loadConfig, parseYamlConfig, validateConfig } from "./load.ts";
 import { defaultConfig } from "./schema.ts";
 
 function writeConfig(text: string): string {
@@ -216,5 +216,35 @@ describe("deepMerge", () => {
       a: { b: 1, c: [2] },
       d: 2,
     });
+  });
+});
+
+describe("config/config.example.yaml", () => {
+  const text = fs.readFileSync("config/config.example.yaml", "utf8");
+
+  it("is valid as shipped and equals the defaults", () => {
+    const file = writeConfig(text);
+    expect(loadConfig({ configFile: file, env: {} }).config).toEqual(defaultConfig());
+  });
+
+  it("stays valid with the commented provider and privacy examples enabled", () => {
+    // Uncomment the example blocks ("  # key: …" → "  key: …") after removing the empty defaults.
+    const lines = text.split("\n");
+    const start = (marker: string) => lines.findIndex((l) => l.startsWith(marker));
+    const uncomment = (from: number) => {
+      for (let i = from; i < lines.length && /^\s*#/.test(lines[i] as string); i++) {
+        const line = lines[i] as string;
+        if (/^\s*# (example|Path handling|until then)/.test(line)) continue;
+        lines[i] = line.replace(/^(\s*)# ?/, "$1");
+      }
+    };
+    lines[start("providers: {}")] = "";
+    uncomment(start("# example (used from M1"));
+    lines[lines.findIndex((l) => l === "  directories: []")] = "";
+    uncomment(lines.findIndex((l) => l.includes("# directories:")));
+    const config = validateConfig(parseYamlConfig(lines.join("\n"), "example"), "example");
+    expect(Object.keys(config.providers).sort()).toEqual(["deepseek", "ollama"]);
+    expect(config.providers["ollama"]?.location).toBe("local");
+    expect(config.privacy.directories.map((d) => d.label)).toEqual(["local_only", "public"]);
   });
 });

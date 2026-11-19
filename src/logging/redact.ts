@@ -11,10 +11,13 @@
 
 export const REDACTED = "[REDACTED]";
 
+// "token" must not catch usage counters (inputTokens, maxOutputTokens, tokenCount) or tokenizers,
+// which AMOS logs routinely from M1.
 const SENSITIVE_KEY =
-  /pass(word|phrase)?$|secret|token|api[-_]?key|authorization|cookie|credential|private[-_]?key/i;
+  /pass(word|phrase)?$|secret|token(?!s|[-_]?count|[-_]?usage|iz)|api[-_]?key|authorization|cookie|credential|private[-_]?key/i;
+// "messages" = chat history; singular "message" is usually an error/status text and stays visible.
 const CONTENT_KEY =
-  /^(content|contents|body|text|document|prompt|completion|messages?|file[-_]?contents?)$/i;
+  /^(content|contents|body|text|document|prompt|completion|messages|file[-_]?contents?)$/i;
 
 const CREDENTIAL_PATTERNS: readonly RegExp[] = [
   /\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/g,

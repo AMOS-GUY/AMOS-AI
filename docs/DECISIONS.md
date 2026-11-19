@@ -1,21 +1,30 @@
 # Architecture decision log
 
-Each entry: context → decision → consequences. Status: _proposed_ until the owner approves.
+Each entry: context → decision → consequences. Status: _proposed_ until the owner approves;
+_adopted (M0)_ means it is implemented and the owner can still overturn it.
 
 ## ADR-001 Single local service (`amosd`) + thin clients — proposed
 
 No microservices, broker or containers. One Node process owns state and side effects; web UI and CLI
 are clients over localhost HTTP + SSE. Simpler to secure, deploy and debug on one laptop.
 
-## ADR-002 TypeScript on Node 24 LTS, npm workspaces — proposed
+## ADR-002 TypeScript on Node 24 LTS; root package now, `web/` workspace in M1 — adopted (M0)
 
-Matches the owner's preference, MCP SDK and REA. Two workspaces (`apps/server`, `apps/web`) to start.
+Matches the owner's preference, the MCP SDK and REA. _Revised during M0:_ the original "two
+workspaces (`apps/server`, `apps/web`)" layout was replaced by "the repository root is the server
+package; `web/` is added as an npm workspace in M1". With no UI yet, a workspace layout added
+configuration without benefit, and this layout means no code moves when the UI arrives.
 
-## ADR-003 SQLite via built-in `node:sqlite` — proposed
+## ADR-003 SQLite via built-in `node:sqlite` — adopted (M0), with a caveat
 
-Avoids native addons whose prebuilt binaries download from GitHub at install time. Accessed only
-through a repository layer so it can be swapped for `better-sqlite3` if the built-in module proves
-inadequate. To verify in M0: API stability on the pinned Node version and FTS5 availability.
+Avoids native addons whose prebuilt binaries download from GitHub at install time.
+_Verified on Windows / Node 24.18.0:_ SQLite 3.53.1 bundled, FTS5, JSON functions, STRICT tables,
+WAL, read-only second connection, transactions, BigInt reads, Unicode (Chinese) paths — see
+`src/storage/storage.test.ts`. No experimental warning is printed.
+_Caveat:_ the Node 24 docs mark `node:sqlite` as Stability 1.2 (release candidate), so its API may
+still change between Node releases. Mitigation: only `src/storage/` imports it, and the compatibility
+tests run on every platform; if it breaks, `better-sqlite3` is the fallback (at the cost of a native
+addon). Not yet verified on Linux.
 
 ## ADR-004 Static React + Vite UI, not Next.js — proposed
 
@@ -24,7 +33,7 @@ inadequate. To verify in M0: API stability on the pinned Node version and FTS5 a
 ## ADR-005 OpenAI-compatible adapter first — proposed
 
 Covers Qwen (Model Studio compatible mode), DeepSeek and Ollama with one adapter. Internal message
-format stays vendor-neutral.
+format stays vendor-neutral. Capabilities per model are config data (`src/core/provider.ts`).
 
 ## ADR-006 Policy enforced in code; model output is untrusted — proposed
 
@@ -37,3 +46,46 @@ Docker needs a root-equivalent daemon and registry access. Revisit per skill if 
 ## ADR-008 Release tarball built on dev machine — proposed
 
 Target network makes `npm install` unreliable. Zero native deps make one tarball portable.
+_M0 evidence:_ production dependencies are two pure-JavaScript packages (`yaml`, `zod`, both with no
+dependencies of their own); the built CLI runs after `npm ci --omit=dev`.
+
+## ADR-009 TypeScript 7 with erasable-only syntax; Node runs `.ts` directly — adopted (M0)
+
+`tsc` (7.0.2) type-checks and emits `dist/`; Node 24 strips types natively, so `node src/cli/main.ts`
+and `node scripts/*.ts` run without a build step or a loader dependency (no tsx/ts-node).
+Consequences: `erasableSyntaxOnly` forbids enums, namespaces and parameter properties (we use
+`as const` unions instead), imports use `.ts` extensions (rewritten to `.js` on emit).
+TypeScript 7 ships per-platform native binaries via npm optional dependencies — a dev-only concern,
+since the release tarball contains compiled JS.
+
+## ADR-010 Biome for lint + format; Vitest for tests — adopted (M0)
+
+One dev dependency instead of ESLint + Prettier + plugins. `complexity/useLiteralKeys` is disabled
+because it conflicts with TypeScript's `noPropertyAccessFromIndexSignature`, which we keep (it
+makes reads of unknown keys visible as `obj["key"]`).
+
+## ADR-011 Layered configuration: defaults < `config.yaml` < `AMOS_*` env; secrets separate — adopted (M0)
+
+YAML because the owner edits it by hand and comments matter. Every object is strict (typos are
+errors), duplicate keys are errors, and secret-looking keys are rejected with a pointer to
+`secrets.env`. Only an explicit list of env vars is read. Secrets come from the environment or a
+`secrets.env` file that must be owner-only on POSIX (refused otherwise, like ssh does).
+Windows ACLs are not checked — a documented limitation of development on Windows.
+
+## ADR-012 Privacy labels with a single egress gate — adopted (M0, rules only)
+
+Four labels (`public` < `personal` < `local_only` < `secret`), most restrictive wins, one
+`checkEgress` decision function for every boundary. M0 implements and tests the decision table;
+calling it from each boundary is part of the milestone that builds that boundary.
+
+## ADR-013 Minimum Node version = the version actually tested (24.18.0) — adopted (M0)
+
+`import.meta.main` needs 24.2+, and `node:sqlite` is release candidate stability, so `engines`,
+`amos doctor` and `.nvmrc` claim only what was run. Raise it when a newer version is tested (REA will
+need ≥ 24.22.1 in M3).
+
+## ADR-014 Connectivity probe sends no credentials — adopted (M0)
+
+The probe uses unauthenticated GETs; any HTTP status (even 401) proves reachability. Listing models
+with a real key was dropped from M0: it would require handling keys in a diagnostic script, and
+reachability is the question M0 needs answered.

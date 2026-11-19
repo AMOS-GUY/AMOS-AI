@@ -18,19 +18,21 @@ code was written.
 
 ## M0 — Development foundation
 
-Scope: repo structure, npm workspaces, TypeScript config, Biome, Vitest, config schema + loader,
-platform paths, secrets loading, secret-scan script, GitHub Actions CI (Ubuntu + Windows),
-connectivity probe script, these docs.
+Scope: repo structure, TypeScript config, Biome, Vitest, config schema + loader, platform paths,
+secrets loading, structured logging, core types, SQLite verification, secret-scan script, GitHub
+Actions CI (Ubuntu + Windows), connectivity probe script, `amos doctor`, these docs.
+(npm workspaces are deferred to M1, when `web/` gives them a purpose — ADR-002.)
 
-Acceptance criteria:
+Acceptance criteria — status as of 2026-11-20 (evidence in [OVERNIGHT_REPORT.md](OVERNIGHT_REPORT.md)):
 
-- [ ] `npm ci && npm run typecheck && npm run lint && npm test && npm run build` pass locally on Windows **and** in CI on Ubuntu.
-- [ ] Config loads from the platform config dir, is validated, and invalid config gives a precise error (tested).
-- [ ] Secrets load from env / `secrets.env`; a world-readable `secrets.env` triggers a warning (tested on Linux CI); secrets are redacted in logs (tested).
-- [ ] `npm test` includes a secret scan that fails on committed key-like strings.
-- [ ] `scripts/probe-connectivity` runs on Windows/Linux and outputs a report (reachability, latency, TLS, model list where a key is supplied).
-- [ ] **Probe executed on the laptop**, results recorded in STATUS.md, provider shortlist decided.
-- [ ] Node version pinned; README explains setup on Windows, WSL2 and Mint.
+- [x] `npm ci && npm run check` (typecheck, lint, test, secret scan, build) passes on Windows, including from a fresh clone.
+- [ ] …and in CI on Ubuntu — **workflow written but never run** (needs a push, which is the owner's call).
+- [x] Config loads from the platform config dir, is validated, and invalid config gives a precise error (tested).
+- [~] Secrets load from env / `secrets.env`; secrets are redacted in logs (tested). An insecure `secrets.env` is _refused_ (stricter than a warning); the real-file POSIX permission tests exist but are skipped on Windows — **pending a Linux run**.
+- [x] The secret scan runs in `npm run check` and as a test, and fails on key-like strings and personal paths.
+- [~] `scripts/probe-connectivity.ts` runs and reports DNS/response time/status per endpoint (verified on Windows). It deliberately sends no API keys, so "model list with a key" was dropped. Linux run pending.
+- [ ] **Probe executed on the laptop**, results recorded in STATUS.md, provider shortlist decided — **owner action**.
+- [x] Node version pinned (`.nvmrc` 24, engines `>=24.18.0`); README explains setup on Windows, WSL2 and Mint.
 
 ## M1 — Core agent
 

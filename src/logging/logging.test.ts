@@ -142,6 +142,35 @@ describe("Logger", () => {
 });
 
 describe("Redactor", () => {
+  it("redacts credential field names but keeps usage counters and status messages", () => {
+    const out = new Redactor().redactValue({
+      accessToken: "a",
+      auth_token: "b",
+      refreshToken: "c",
+      clientSecret: "d",
+      api_key: "e",
+      passphrase: "f",
+      inputTokens: 120,
+      maxOutputTokens: 4096,
+      tokenCount: 7,
+      tokenizer: "bpe",
+      message: "connection refused",
+    });
+    expect(out).toEqual({
+      accessToken: REDACTED,
+      auth_token: REDACTED,
+      refreshToken: REDACTED,
+      clientSecret: REDACTED,
+      api_key: REDACTED,
+      passphrase: REDACTED,
+      inputTokens: 120,
+      maxOutputTokens: 4096,
+      tokenCount: 7,
+      tokenizer: "bpe",
+      message: "connection refused",
+    });
+  });
+
   it("does not substring-mask very short secrets (would mangle logs)", () => {
     const r = new Redactor();
     r.addSecret("a".repeat(MIN_MASKABLE_SECRET_LENGTH - 1));
