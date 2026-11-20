@@ -1,7 +1,9 @@
 import os from "node:os";
 import { type LoadedConfig, loadConfig } from "./config/load.ts";
 import { type AmosPaths, resolvePaths } from "./config/paths.ts";
+import { createEgressGate } from "./config/providers.ts";
 import { loadSecrets, type SecretStore } from "./config/secrets.ts";
+import type { EgressGate } from "./core/egress-gate.ts";
 import { FileSink } from "./logging/file-sink.ts";
 import { Logger, type LogSink, StreamSink } from "./logging/logger.ts";
 import { Redactor } from "./logging/redact.ts";
@@ -26,6 +28,8 @@ export interface Runtime {
   readonly secrets: SecretStore;
   readonly redactor: Redactor;
   readonly logger: Logger;
+  /** The only way to authorise data leaving AMOS; built from validated provider policy. */
+  readonly egress: EgressGate;
 }
 
 export function defaultRuntimeInputs(): RuntimeInputs {
@@ -56,5 +60,5 @@ export function createRuntime(inputs: RuntimeInputs): Runtime {
     );
   }
   const logger = new Logger({ level: loaded.config.logging.level, sinks, redactor });
-  return { paths, loaded, secrets, redactor, logger };
+  return { paths, loaded, secrets, redactor, logger, egress: createEgressGate(loaded.config) };
 }

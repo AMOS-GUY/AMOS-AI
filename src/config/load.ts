@@ -78,6 +78,14 @@ export function validateConfig(raw: unknown, source: string): AmosConfig {
       },
     );
   }
+  const removed = findRemovedSettings(raw);
+  if (removed.length > 0) {
+    throw new AmosError(
+      "CONFIG_INVALID",
+      `${source} uses removed settings:\n${removed.map((r) => `  - ${r}`).join("\n")}`,
+      { hint: "Remove or rename these settings; see config/config.example.yaml." },
+    );
+  }
   const result = configSchema.safeParse(raw);
   if (!result.success) {
     const problems = formatIssues(result.error.issues);
@@ -87,6 +95,25 @@ export function validateConfig(raw: unknown, source: string): AmosConfig {
     });
   }
   return result.data;
+}
+
+/** Settings that existed in an earlier version, with what replaced them. */
+const REMOVED_SETTINGS: ReadonlyArray<readonly [path: readonly string[], explanation: string]> = [
+  [
+    ["network", "connectTimeoutMs"],
+    "network.connectTimeoutMs was removed in M0.1: it could not be enforced. Use network.headersTimeoutMs (covers DNS, connect and TLS).",
+  ],
+];
+
+function findRemovedSettings(raw: unknown): string[] {
+  return REMOVED_SETTINGS.filter(([keys]) => {
+    let node: unknown = raw;
+    for (const key of keys) {
+      if (node === null || typeof node !== "object" || !(key in node)) return false;
+      node = (node as Record<string, unknown>)[key];
+    }
+    return true;
+  }).map(([, explanation]) => explanation);
 }
 
 export function formatIssues(issues: readonly z.core.$ZodIssue[]): string {

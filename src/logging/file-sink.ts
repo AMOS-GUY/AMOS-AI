@@ -1,5 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
+import {
+  ensurePrivateDir,
+  ensurePrivateFile,
+  securePrivateFilesIfPresent,
+} from "../platform/private-fs.ts";
 import type { LogRecord, LogSink } from "./logger.ts";
 
 /**
@@ -7,7 +12,8 @@ import type { LogRecord, LogSink } from "./logger.ts";
  *   amos.log → amos.log.1 → … → amos.log.<maxFiles-1> → deleted.
  *
  * Writes are synchronous: log volume is low, and synchronous appends mean the last records before a
- * crash are on disk. Files are created owner-only (0600) because logs contain paths and task names.
+ * crash are on disk. The directory must be private and files are 0600 (POSIX) because logs contain
+ * paths and task names — see src/platform/private-fs.ts.
  */
 
 export interface FileSinkOptions {
@@ -35,7 +41,12 @@ export class FileSink implements LogSink {
 
   write(record: LogRecord): void {
     if (this.#size === undefined) {
-      fs.mkdirSync(this.#dir, { recursive: true, mode: 0o700 });
+      // Same rules as the database: private directory (refused if open to others), 0600 files.
+      ensurePrivateDir(this.#dir);
+      ensurePrivateFile(this.file);
+      securePrivateFilesIfPresent(
+        Array.from({ length: this.#maxFiles - 1 }, (_, i) => `${this.file}.${i + 1}`),
+      );
       this.#size = fileSize(this.file);
     }
     const line = `${JSON.stringify(record)}\n`;

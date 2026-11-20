@@ -40,32 +40,79 @@ const serverSchema = z
   })
   .strict();
 
+// Timeouts the HTTP transport (src/net/http.ts) actually enforces. There is deliberately no
+// separate "connect" timeout: Node's built-in fetch cannot enforce one without the undici package
+// (M0.1 F4). DNS, connect and TLS are covered by headersTimeoutMs.
 const networkSchema = z
   .object({
+    /** true = no requests except to this machine (loopback). */
     offline: z.boolean().default(false),
-    connectTimeoutMs: z.number().int().min(100).max(120_000).default(10_000),
-    requestTimeoutMs: z.number().int().min(1_000).max(600_000).default(120_000),
+    /** From sending the request until response headers arrive (includes DNS, connect, TLS). */
+    headersTimeoutMs: z.number().int().min(1_000).max(600_000).default(60_000),
+    /** Longest silence allowed between two chunks of a response body. */
+    idleTimeoutMs: z.number().int().min(1_000).max(600_000).default(120_000),
+    /** Hard limit for the whole request, including reading the full body. */
+    requestTimeoutMs: z.number().int().min(1_000).max(3_600_000).default(600_000),
   })
-  .strict();
+  .strict()
+  .superRefine((n, ctx) => {
+    for (const key of ["headersTimeoutMs", "idleTimeoutMs"] as const) {
+      if (n[key] > n.requestTimeoutMs) {
+        ctx.addIssue({
+          code: "custom",
+          path: [key],
+          message: `cannot exceed requestTimeoutMs (${n.requestTimeoutMs})`,
+        });
+      }
+    }
+  });
 
-const directoryLabelSchema = z.enum(["public", "personal", "local_only"]);
+// `secret` is allowed for directories (it only restricts further). `public` is allowed for an
+// explicitly listed directory, never as the default for unclassified data.
+const directoryLabelSchema = z.enum(["public", "personal", "local_only", "secret"]);
+
+const defaultLabelSchema = z.enum(["personal", "local_only"], {
+  error: () =>
+    "must be local_only (the default) or personal. Unclassified data is never treated as public; list public directories explicitly under privacy.directories",
+});
+
+function normalizeDirKey(p: string): string {
+  return p.trim().replace(/[\\/]+$/, "") || p.trim();
+}
 
 const privacySchema = z
   .object({
-    /** Label for owner files outside any listed directory. */
-    defaultLabel: directoryLabelSchema.default("personal"),
+    /** Label for owner data that no rule classifies. Conservative default: local_only. */
+    defaultLabel: defaultLabelSchema.default("local_only"),
     directories: z
       .array(
         z
           .object({
-            path: z.string().min(1),
+            path: z.string().trim().min(1),
             label: directoryLabelSchema,
           })
           .strict(),
       )
       .default([]),
   })
-  .strict();
+  .strict()
+  .superRefine((privacy, ctx) => {
+    // Two entries for one directory would make its label depend on order — a silent downgrade risk.
+    const seen = new Map<string, number>();
+    privacy.directories.forEach((d, index) => {
+      const key = normalizeDirKey(d.path);
+      const first = seen.get(key);
+      if (first !== undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["directories", index, "path"],
+          message: `duplicates privacy.directories.${first} ("${d.path}"); give each directory one label`,
+        });
+      } else {
+        seen.set(key, index);
+      }
+    });
+  });
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
@@ -80,6 +127,25 @@ const providerSchema = z
       .regex(/^[A-Z][A-Z0-9_]*$/, "must be an UPPER_SNAKE_CASE variable name")
       .optional(),
     location: z.enum(["local", "cloud"]),
+    /**
+     * Required, no default (M0.1 F3): every provider states whether it may receive personal data.
+     * false → only `public` data is sent to it. local_only data additionally requires
+     * location: local.
+     */
+    privacy: z
+      .object(
+        {
+          allowPersonalData: z.boolean({
+            error: () =>
+              "is required and must be true or false — AMOS never assumes a provider may receive your data",
+          }),
+        },
+        {
+          error: () =>
+            "is required: add `privacy: { allowPersonalData: false }` (or true if this provider may receive your personal data)",
+        },
+      )
+      .strict(),
     models: z.record(z.string().min(1), modelCapabilitiesSchema).default({}),
   })
   .strict()

@@ -2,6 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { AmosError } from "../core/errors.ts";
+import {
+  ensurePrivateDir,
+  ensurePrivateFile,
+  securePrivateFilesIfPresent,
+} from "../platform/private-fs.ts";
 
 /**
  * Thin wrapper around Node's built-in `node:sqlite` (ADR-003).
@@ -15,11 +20,35 @@ export interface OpenOptions {
   readonly readOnly?: boolean;
 }
 
-/** Open (creating if needed) a database file with AMOS's standard settings. */
+/** SQLite's companion files for a database; they hold the same data as the database itself. */
+export function companionFiles(file: string): string[] {
+  return [`${file}-wal`, `${file}-shm`, `${file}-journal`];
+}
+
+/**
+ * Open (creating if needed) a database file with AMOS's standard settings.
+ *
+ * File security (POSIX, see src/platform/private-fs.ts): the containing directory must be
+ * private (created 0700, or refused if an existing one is open to others); the database file is
+ * pre-created 0600 before SQLite touches it; existing database/WAL/SHM/journal files are tightened
+ * to 0600. SQLite creates its -wal/-shm/-journal files with the database file's mode, so they
+ * inherit 0600. Temporary tables and sort spills stay in memory (`temp_store = MEMORY`), so no
+ * database content is written to the system temp directory.
+ */
 export function openDatabase(file: string, options: OpenOptions = {}): Database {
   const inMemory = file === ":memory:";
-  if (!inMemory && !options.readOnly) {
-    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  if (!inMemory) {
+    if (options.readOnly) {
+      // Read-only callers never create anything, but still refuse insecure locations.
+      if (!fs.existsSync(file)) {
+        throw new AmosError("STORAGE", `Database ${file} does not exist.`);
+      }
+      ensurePrivateDir(path.dirname(file));
+    } else {
+      ensurePrivateDir(path.dirname(file));
+      ensurePrivateFile(file);
+    }
+    securePrivateFilesIfPresent([file, ...companionFiles(file)]);
   }
   let db: Database;
   try {
@@ -30,6 +59,7 @@ export function openDatabase(file: string, options: OpenOptions = {}): Database 
   try {
     db.exec("PRAGMA foreign_keys = ON");
     db.exec("PRAGMA busy_timeout = 5000");
+    db.exec("PRAGMA temp_store = MEMORY");
     if (!inMemory && !options.readOnly) {
       // WAL: readers don't block the writer, and a crash mid-write cannot corrupt committed data.
       const row = db.prepare("PRAGMA journal_mode = WAL").get() as { journal_mode?: string };

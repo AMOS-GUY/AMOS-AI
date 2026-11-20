@@ -17,30 +17,44 @@ server: # used from M1; loopback only — other addresses are rejected
   port: 47821 # (env: AMOS_PORT)
 
 network:
-  offline: false # true = never contact the network (env: AMOS_OFFLINE)
-  connectTimeoutMs: 10000
-  requestTimeoutMs: 120000
+  offline: false # true = contact nothing except this machine (env: AMOS_OFFLINE)
+  # All three are enforced by the HTTP transport. There is no separate connect timeout:
+  # DNS, connect and TLS count towards headersTimeoutMs.
+  headersTimeoutMs: 60000 # until response headers arrive
+  idleTimeoutMs: 120000 # longest silence between two chunks of a response
+  requestTimeoutMs: 600000 # whole request including the body (≥ the two above)
 
 privacy:
-  defaultLabel: personal # label for your files outside the directories below
+  # Labels: public < personal < local_only < secret.
+  # Data nobody classified gets defaultLabel. It can be local_only (default: never leaves this
+  # machine) or personal (may go to providers with privacy.allowPersonalData: true).
+  # "public" is rejected here on purpose — list public directories explicitly below.
+  defaultLabel: local_only
   directories: []
   # Path handling (~ expansion, symlink resolution) arrives with the M2 path guard;
-  # until then these entries are validated and stored only.
-  # example:
+  # until then these entries are validated and stored only. Each directory may appear once.
+  # >>> example directories
   # directories:
   #   - path: ~/Documents/private
   #     label: local_only   # only ever sent to local models
   #   - path: ~/src/open-source
-  #     label: public
+  #     label: public       # may be sent to any enabled provider
+  # <<<
 
 providers: {}
-# example (used from M1; nothing contacts these in M0):
+# Every provider MUST state privacy.allowPersonalData (no default):
+#   false → it only ever receives public data
+#   true  → it may also receive personal data; local_only data additionally needs location: local
+# Used from M1; nothing contacts these providers in M0.
+# >>> example providers
 # providers:
 #   deepseek:
 #     kind: openai-compatible
 #     baseUrl: https://api.deepseek.com
 #     apiKeyEnv: DEEPSEEK_API_KEY       # the value lives in secrets.env
 #     location: cloud
+#     privacy:
+#       allowPersonalData: false        # set true only if you accept it receiving personal data
 #     models:
 #       deepseek-chat:
 #         contextWindow: 65536
@@ -51,8 +65,11 @@ providers: {}
 #     kind: openai-compatible
 #     baseUrl: http://127.0.0.1:11434/v1
 #     location: local
+#     privacy:
+#       allowPersonalData: true         # runs on this machine
 #     models:
 #       qwen2.5:7b:
 #         contextWindow: 32768
 #         maxOutputTokens: 4096
 #         toolCalling: native
+# <<<

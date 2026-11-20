@@ -32,8 +32,13 @@ describe("defaults", () => {
       file: { enabled: true, maxBytes: 5 * 1024 * 1024, maxFiles: 5 },
     });
     expect(c.server).toEqual({ host: "127.0.0.1", port: 47821 });
-    expect(c.network.offline).toBe(false);
-    expect(c.privacy).toEqual({ defaultLabel: "personal", directories: [] });
+    expect(c.network).toEqual({
+      offline: false,
+      headersTimeoutMs: 60_000,
+      idleTimeoutMs: 120_000,
+      requestTimeoutMs: 600_000,
+    });
+    expect(c.privacy).toEqual({ defaultLabel: "local_only", directories: [] });
     expect(c.providers).toEqual({});
   });
 });
@@ -132,6 +137,7 @@ describe("provider config", () => {
     kind: "openai-compatible",
     apiKeyEnv: "DEEPSEEK_API_KEY",
     location: "cloud",
+    privacy: { allowPersonalData: false },
     models: {
       "deepseek-chat": { contextWindow: 65536, maxOutputTokens: 8192, toolCalling: "native" },
     },
@@ -161,6 +167,7 @@ describe("provider config", () => {
       kind: "openai-compatible",
       baseUrl: "http://127.0.0.1:11434/v1",
       location: "local",
+      privacy: { allowPersonalData: true },
     };
     expect(validateConfig({ providers: { ollama } }, "t").providers["ollama"]?.location).toBe(
       "local",
@@ -227,24 +234,36 @@ describe("config/config.example.yaml", () => {
     expect(loadConfig({ configFile: file, env: {} }).config).toEqual(defaultConfig());
   });
 
-  it("stays valid with the commented provider and privacy examples enabled", () => {
-    // Uncomment the example blocks ("  # key: …" → "  key: …") after removing the empty defaults.
+  /** Uncomment every block between "# >>> example …" and "# <<<", replacing the empty default. */
+  function withExamplesEnabled(): string {
     const lines = text.split("\n");
-    const start = (marker: string) => lines.findIndex((l) => l.startsWith(marker));
-    const uncomment = (from: number) => {
-      for (let i = from; i < lines.length && /^\s*#/.test(lines[i] as string); i++) {
-        const line = lines[i] as string;
-        if (/^\s*# (example|Path handling|until then)/.test(line)) continue;
-        lines[i] = line.replace(/^(\s*)# ?/, "$1");
-      }
-    };
-    lines[start("providers: {}")] = "";
-    uncomment(start("# example (used from M1"));
+    lines[lines.indexOf("providers: {}")] = "";
     lines[lines.indexOf("  directories: []")] = "";
-    uncomment(lines.findIndex((l) => l.includes("# directories:")));
-    const config = validateConfig(parseYamlConfig(lines.join("\n"), "example"), "example");
+    let inside = false;
+    const out: string[] = [];
+    for (const line of lines) {
+      if (/^\s*# >>> example/.test(line)) inside = true;
+      else if (/^\s*# <<</.test(line)) inside = false;
+      else out.push(inside ? line.replace(/^(\s*)# ?/, "$1") : line);
+    }
+    return out.join("\n");
+  }
+
+  it("stays valid with the commented provider and privacy examples enabled", () => {
+    const config = validateConfig(parseYamlConfig(withExamplesEnabled(), "example"), "example");
     expect(Object.keys(config.providers).sort()).toEqual(["deepseek", "ollama"]);
-    expect(config.providers["ollama"]?.location).toBe("local");
+    expect(config.providers["ollama"]).toMatchObject({
+      location: "local",
+      privacy: { allowPersonalData: true },
+    });
+    expect(config.providers["deepseek"]?.privacy.allowPersonalData).toBe(false);
     expect(config.privacy.directories.map((d) => d.label)).toEqual(["local_only", "public"]);
+  });
+
+  it("documents every provider with an explicit privacy policy", () => {
+    const enabled = withExamplesEnabled();
+    expect(enabled.match(/kind: openai-compatible/g)?.length).toBe(
+      enabled.match(/^\s+allowPersonalData: (true|false)/gm)?.length,
+    );
   });
 });
