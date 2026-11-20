@@ -26,7 +26,7 @@ Actions CI (Ubuntu + Windows), connectivity probe script, `amos doctor`, these d
 Acceptance criteria — status as of 2026-11-20 (evidence in [OVERNIGHT_REPORT.md](OVERNIGHT_REPORT.md)):
 
 - [x] `npm ci && npm run check` (typecheck, lint, test, secret scan, build) passes on Windows, including from a fresh clone.
-- [ ] …and in CI on Ubuntu — **workflow written but never run** (needs a push, which is the owner's call).
+- [x] …and in CI on Ubuntu — CI run #1 (`807d564`) passed on ubuntu-24.04 and windows-latest (step results; see [M0_REVIEW.md](M0_REVIEW.md)).
 - [x] Config loads from the platform config dir, is validated, and invalid config gives a precise error (tested).
 - [~] Secrets load from env / `secrets.env`; secrets are redacted in logs (tested). An insecure `secrets.env` is _refused_ (stricter than a warning); the real-file POSIX permission tests exist but are skipped on Windows — **pending a Linux run**.
 - [x] The secret scan runs in `npm run check` and as a test, and fails on key-like strings and personal paths.

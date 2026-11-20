@@ -1,5 +1,9 @@
 # Overnight report — M0 development foundation (2026-11-20)
 
+> **Later update (same day):** this report is a record of the overnight session and is not edited.
+> Since it was written, all commits were pushed at the owner's instruction, and CI run #1 passed on
+> Ubuntu and Windows. Current state: [STATUS.md](STATUS.md). Independent review: [M0_REVIEW.md](M0_REVIEW.md).
+
 ## Executive summary
 
 M0 is **implemented and verified on Windows**. The repository now has a strict TypeScript
