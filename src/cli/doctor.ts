@@ -8,6 +8,7 @@ import type { AmosPaths } from "../config/paths.ts";
 import { loadSecrets } from "../config/secrets.ts";
 import { formatErrorForUser } from "../core/errors.ts";
 import { Redactor } from "../logging/redact.ts";
+import { insecureDirReason } from "../platform/private-fs.ts";
 import { sqliteCapabilities } from "../storage/sqlite.ts";
 
 /**
@@ -121,17 +122,46 @@ function checkDirectories(paths: AmosPaths): CheckResult[] {
     ["data dir", paths.dataDir],
     ["log dir", paths.logDir],
   ] as const;
-  return dirs.map(([name, dir]) => {
+  return dirs.map(([name, dir]): CheckResult => {
     if (fs.existsSync(dir)) {
-      return writable(dir)
-        ? { name, status: "ok", detail: dir }
-        : { name, status: "fail", detail: `${dir} exists but is not writable` };
+      if (!writable(dir))
+        return { name, status: "fail", detail: `${dir} exists but is not writable` };
+      const posixProblem = process.platform === "win32" ? null : posixDirProblem(name, dir);
+      return posixProblem ?? { name, status: "ok", detail: dir };
     }
     const ancestor = nearestExisting(dir);
     return ancestor && writable(ancestor)
       ? { name, status: "info", detail: `${dir} (will be created on first use)` }
       : { name, status: "fail", detail: `${dir} cannot be created (no writable parent)` };
   });
+}
+
+/**
+ * Data and log directories must be private — openDatabase and the log file refuse them
+ * otherwise, so doctor reports the same thing first. The config directory holds no secrets
+ * (secrets.env is checked on its own), but if others can write to it they could replace
+ * config.yaml.
+ */
+function posixDirProblem(name: string, dir: string): CheckResult | null {
+  const mode = fs.statSync(dir).mode;
+  const octal = (mode & 0o777).toString(8).padStart(3, "0");
+  if (name === "config dir") {
+    return (mode & 0o022) === 0
+      ? null
+      : {
+          name,
+          status: "warn",
+          detail: `${dir} is writable by other users (mode ${octal}); they could replace config.yaml. Fix: chmod 700 "${dir}"`,
+        };
+  }
+  const reason = insecureDirReason(mode);
+  return reason
+    ? {
+        name,
+        status: "fail",
+        detail: `${dir} is not private: ${reason}. AMOS will refuse to use it. Fix: chmod 700 "${dir}"`,
+      }
+    : null;
 }
 
 function checkUnknownVariables(env: DoctorInputs["env"]): CheckResult {

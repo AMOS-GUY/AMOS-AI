@@ -193,3 +193,30 @@ describe("amos help and argument validation (M0.1)", () => {
     }
   });
 });
+
+describe.skipIf(isWindows)("doctor directory privacy (POSIX, M0.1)", () => {
+  it("fails on a data or log directory open to other users, with the fix", () => {
+    const { inputs, env } = sandbox();
+    fs.mkdirSync(env.AMOS_DATA_DIR);
+    fs.chmodSync(env.AMOS_DATA_DIR, 0o755);
+    const result = run(["doctor"], inputs);
+    expect(result.code).toBe(1);
+    expect(result.stdout).toMatch(/\[FAIL\] data dir .*is not private/);
+    expect(result.stdout).toContain(`chmod 700 "${env.AMOS_DATA_DIR}"`);
+  });
+
+  it("warns (not fails) on a config directory others can write to", () => {
+    const { inputs, env } = sandbox();
+    fs.mkdirSync(env.AMOS_CONFIG_DIR);
+    fs.chmodSync(env.AMOS_CONFIG_DIR, 0o777);
+    const result = run(["doctor"], inputs);
+    expect(result.stdout).toMatch(/\[WARN\] config dir .*writable by other users/);
+    expect(result.code).toBe(0);
+  });
+
+  it("reports private directories as ok", () => {
+    const { inputs, env } = sandbox();
+    fs.mkdirSync(env.AMOS_DATA_DIR, { mode: 0o700 });
+    expect(run(["doctor"], inputs).stdout).toMatch(/\[ok {2}\] data dir/);
+  });
+});
