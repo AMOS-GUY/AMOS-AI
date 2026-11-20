@@ -14,12 +14,58 @@ Usage:
   amos paths [--json]      Show where AMOS keeps config, data and logs
   amos config show         Print the effective configuration (no secret values)
   amos version             Print the version
-  amos help                Show this help
+  amos help [command]      Show help (also: amos <command> --help)
 `;
+
+interface CommandSpec {
+  /** Words after "amos" that name the command, e.g. ["config", "show"]. */
+  readonly words: readonly string[];
+  readonly json: boolean;
+  readonly help: string;
+}
+
+const COMMANDS: readonly CommandSpec[] = [
+  {
+    words: ["doctor"],
+    json: true,
+    help: `Usage: amos doctor [--json]
+
+Checks this machine's setup: Node.js version, SQLite features, configuration, secrets file
+permissions, data/log directories, unknown AMOS_* variables, and optional tools (git, python,
+bubblewrap). Read-only: it creates and changes nothing and does not use the network.
+
+Exit status: 0 if no check failed, 1 if any check failed, 2 for usage errors.
+`,
+  },
+  {
+    words: ["paths"],
+    json: true,
+    help: `Usage: amos paths [--json]
+
+Prints where AMOS keeps its config file, secrets file, database and logs on this OS.
+Override with AMOS_CONFIG_DIR, AMOS_DATA_DIR and AMOS_STATE_DIR (absolute paths).
+`,
+  },
+  {
+    words: ["config", "show"],
+    json: false,
+    help: `Usage: amos config show
+
+Prints the effective configuration (defaults < config.yaml < AMOS_* variables), the names of
+the entries in secrets.env (never their values), and which variables overrode a setting.
+Exit status 1 if the configuration or secrets file is invalid.
+`,
+  },
+  { words: ["version"], json: false, help: "Usage: amos version\n\nPrints the AMOS version.\n" },
+];
 
 export interface CliIo {
   readonly stdout: NodeJS.WritableStream;
   readonly stderr: NodeJS.WritableStream;
+}
+
+function findCommand(positionals: readonly string[]): CommandSpec | undefined {
+  return COMMANDS.find((c) => c.words.every((w, i) => positionals[i] === w));
 }
 
 /** Returns the process exit code. Never calls process.exit itself, so it is testable. */
@@ -31,15 +77,48 @@ export function runCli(argv: readonly string[], inputs: RuntimeInputs, io: CliIo
     io.stderr.write(`${error instanceof Error ? error.message : String(error)}\n\n${HELP}`);
     return 2;
   }
-  const [command, sub] = parsed.positionals;
+  const positionals = parsed.positionals;
+  const wantsHelp = parsed.values.help === true || positionals[0] === "help";
+  const words = positionals[0] === "help" ? positionals.slice(1) : positionals;
+  const spec = findCommand(words);
+
+  // Help never runs the command (`amos doctor --help` prints doctor's help and exits 0).
+  if (wantsHelp) {
+    if (words.length === 0) {
+      io.stdout.write(HELP);
+      return 0;
+    }
+    if (spec && words.length === spec.words.length) {
+      io.stdout.write(spec.help);
+      return 0;
+    }
+    io.stderr.write(`No help for unknown command: ${words.join(" ")}\n\n${HELP}`);
+    return 2;
+  }
+  if (positionals.length === 0) {
+    io.stdout.write(HELP);
+    return 0;
+  }
+  if (!spec) {
+    const hint = positionals[0] === "config" ? "Did you mean: amos config show\n\n" : "";
+    io.stderr.write(`Unknown command: ${positionals.join(" ")}\n${hint}\n${HELP}`);
+    return 2;
+  }
+  if (positionals.length > spec.words.length) {
+    io.stderr.write(
+      `Unexpected argument: ${positionals.slice(spec.words.length).join(" ")}\n\n${spec.help}`,
+    );
+    return 2;
+  }
   const json = parsed.values.json === true;
+  if (json && !spec.json) {
+    io.stderr.write(`amos ${spec.words.join(" ")} does not support --json.\n\n${spec.help}`);
+    return 2;
+  }
+  const command = spec.words.join(" ");
 
   try {
     switch (command) {
-      case undefined:
-      case "help":
-        io.stdout.write(HELP);
-        return 0;
       case "version":
         io.stdout.write(`${VERSION}\n`);
         return 0;
@@ -60,8 +139,7 @@ export function runCli(argv: readonly string[], inputs: RuntimeInputs, io: CliIo
         );
         return results.some((r) => r.status === "fail") ? 1 : 0;
       }
-      case "config": {
-        if (sub !== "show") break;
+      case "config show": {
         const runtime = createRuntime({ ...inputs, consoleStream: null });
         const output = {
           source: runtime.loaded.file ?? "(defaults — no config file)",
@@ -79,8 +157,9 @@ export function runCli(argv: readonly string[], inputs: RuntimeInputs, io: CliIo
     io.stderr.write(`${formatErrorForUser(error)}\n`);
     return 1;
   }
-  io.stderr.write(`Unknown command: ${[command, sub].filter(Boolean).join(" ")}\n\n${HELP}`);
-  return 2;
+  // Unreachable unless COMMANDS and the switch disagree — a bug, reported as such.
+  io.stderr.write(`internal error: command "${command}" has no handler\n`);
+  return 70;
 }
 
 function parse(argv: readonly string[]) {

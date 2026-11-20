@@ -140,3 +140,56 @@ describe("doctor checks", () => {
 function listTree(dir: string): string[] {
   return fs.readdirSync(dir, { recursive: true, encoding: "utf8" }).sort();
 }
+
+describe("amos help and argument validation (M0.1)", () => {
+  it.each([
+    [["doctor", "--help"], "Usage: amos doctor"],
+    [["doctor", "-h"], "Usage: amos doctor"],
+    [["--help", "doctor"], "Usage: amos doctor"],
+    [["help", "doctor"], "Usage: amos doctor"],
+    [["doctor", "--json", "--help"], "Usage: amos doctor"],
+    [["config", "show", "--help"], "Usage: amos config show"],
+    [["help", "config", "show"], "Usage: amos config show"],
+    [["paths", "-h"], "Usage: amos paths"],
+    [["--help"], "Usage:\n  amos doctor"],
+    [["-h"], "Usage:\n  amos doctor"],
+    [["help"], "Usage:\n  amos doctor"],
+  ])("`amos %s` prints help and does not run the command", (argv, expected) => {
+    const { inputs, root } = sandbox({ AMOS_LOGLEVEL: "would-warn-if-doctor-ran" });
+    const before = listTree(root);
+    const result = run(argv, inputs);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain(expected);
+    expect(result.stdout).not.toMatch(/\[(ok|WARN|FAIL|info)\s*\]/); // no doctor output
+    expect(listTree(root)).toEqual(before);
+  });
+
+  it("rejects help for unknown commands", () => {
+    const { inputs } = sandbox();
+    const result = run(["frobnicate", "--help"], inputs);
+    expect(result.code).toBe(2);
+    expect(result.stderr).toContain("No help for unknown command: frobnicate");
+  });
+
+  it("rejects --json where it is not supported instead of ignoring it", () => {
+    const { inputs } = sandbox();
+    expect(run(["version", "--json"], inputs)).toMatchObject({ code: 2 });
+    expect(run(["config", "show", "--json"], inputs).stderr).toContain("does not support --json");
+  });
+
+  it("rejects extra arguments and incomplete commands", () => {
+    const { inputs } = sandbox();
+    expect(run(["doctor", "now"], inputs).stderr).toContain("Unexpected argument: now");
+    const config = run(["config"], inputs);
+    expect(config.code).toBe(2);
+    expect(config.stderr).toContain("Did you mean: amos config show");
+    expect(run(["config", "edit"], inputs).code).toBe(2);
+  });
+
+  it("has a handler for every documented command", () => {
+    const { inputs } = sandbox();
+    for (const argv of [["doctor"], ["paths"], ["config", "show"], ["version"]]) {
+      expect(run(argv, inputs).code, argv.join(" ")).not.toBe(70);
+    }
+  });
+});
