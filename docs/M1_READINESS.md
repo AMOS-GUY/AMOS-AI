@@ -12,6 +12,24 @@ design decisions (D1–D8) are open**, and two of them (D2 privacy approval, D3 
 security. Starting M1 without them would mean deciding them implicitly in code. M1 also depends on
 your **laptop probe result** to pick the providers.
 
+## Update after M0.1 (2026-11-20)
+
+M0.1 ([report](M0.1_HARDENING_REPORT.md)) changed this assessment:
+
+- **D2 is implemented** as recommended, option (a): `privacy.allowPersonalData` is required per
+  provider, with no default. This was within the M0.1 brief ("each provider configuration must
+  explicitly define whether it is permitted to receive personal data"). Revert or amend it if you
+  prefer (b) or (c).
+- **D5 is implemented** as recommended, option (b): `connectTimeoutMs` was removed in favour of the
+  enforced `headersTimeoutMs`, `idleTimeoutMs` and `requestTimeoutMs`.
+- **F1–F4 are fixed.** The persistence, privacy and timeout rows in the table below are resolved:
+  `openDatabase` enforces private files, the `EgressGate` exists and is wired into the runtime, and
+  `HttpClient` is the transport M1 adapters must use.
+- M1's provider adapter therefore has a fixed shape: build labelled items → `runtime.egress.authorizeForProvider(id, items, build)` →
+  `httpClientFromConfig(config).request({ url, body: clearance, signal })`. Fallback means a new
+  `authorizeForProvider` call for the next provider.
+- Still open for you: D1, D3, D4, D6, D7, D8, ADR-001/004/005/006 approval, and the laptop probe.
+
 ## What M1 can build on, and what it can't
 
 | M1 needs                    | Provided by M0                                                                             | Gap                                                                                                                                                                |
@@ -96,10 +114,11 @@ outcome. `amos doctor` gains provider reachability (respecting `network.offline`
 - Fallback across providers is also an **egress change**: the next provider must pass the egress gate
   on its own (D2). Never fall back silently to a provider you haven't approved for the data.
 
-**Privacy enforcement.** M1 has one real boundary: model requests. The router must call `checkEgress`
-with the combined label of the full rendered context, immediately before `fetch`, inside the adapter
-layer, so no code path can skip it. Add a test that a `local_only` message never reaches a fake cloud
-provider, even through fallback.
+**Privacy enforcement.** M1 has one real boundary: model requests. _(Updated for M0.1.)_ The adapter
+must build its request body inside `EgressGate.authorizeForProvider` from labelled items only, and
+send it with `HttpClient` — which refuses bodies without a matching clearance, and is the only module
+allowed to use the network (boundary test). Add an M1 test that a `local_only` message never reaches
+a fake cloud provider, even through fallback.
 
 ## Decisions to finalise before M1
 
@@ -134,4 +153,4 @@ provider, even through fallback.
 - [ ] You: approve or amend ADR-001/004/005/006 and D1–D8
 - [ ] You: decide on git email (M0_REVIEW, "Git privacy review")
 - [ ] Optional: M0.1 hardening commit (F5, F6, F9, F10, F11), plus the Node 24.22.3 upgrade (F7)
-- [ ] F1–F4 scheduled into M1a's first commits
+- [x] F1–F4 fixed in M0.1 (no longer M1 work)

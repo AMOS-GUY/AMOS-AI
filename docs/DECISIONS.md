@@ -72,11 +72,13 @@ errors), duplicate keys are errors, and secret-looking keys are rejected with a 
 `secrets.env` file that must be owner-only on POSIX (refused otherwise, like ssh does).
 Windows ACLs are not checked — a documented limitation of development on Windows.
 
-## ADR-012 Privacy labels with a single egress gate — adopted (M0, rules only)
+## ADR-012 Privacy labels with a single egress gate — adopted (M0), revised (M0.1)
 
-Four labels (`public` < `personal` < `local_only` < `secret`), most restrictive wins, one
-`checkEgress` decision function for every boundary. M0 implements and tests the decision table;
-calling it from each boundary is part of the milestone that builds that boundary.
+Four labels (`public` < `personal` < `local_only` < `secret`); the most restrictive wins.
+_M0.1 revision:_ the M0 `checkEgress(label, destination, { destinationApproved })` API was removed.
+It let any caller assert that a destination was approved, which is a bypass. It is replaced by
+`decideEgress(label, recipient)` (pure) plus the `EgressGate`, whose provider policy comes only from
+config (ADR-016, ADR-017).
 
 ## ADR-013 Minimum Node version = the version actually tested (24.18.0) — adopted (M0)
 
@@ -89,3 +91,68 @@ need ≥ 24.22.1 in M3).
 The probe uses unauthenticated GETs; any HTTP status (even 401) proves reachability. Listing models
 with a real key was dropped from M0: it would require handling keys in a diagnostic script, and
 reachability is the question M0 needs answered.
+
+## ADR-015 Unclassified data is `local_only`; `public` is never a default — adopted (M0.1)
+
+AMOS will handle private documents, source code and personal information. Treating anything
+unclassified as shareable would make every forgotten label a leak, so the default is the most
+restrictive label that still lets local work happen. Consequences:
+
+- Until you label directories (`privacy.directories`) or opt in to `defaultLabel: personal`, nothing
+  unclassified reaches a cloud provider.
+- `public` is rejected as a default, with an explanatory error.
+- Empty label sets are errors, and unknown labels fail closed.
+- Lowering a label needs an explicit owner reclassification with a reason; `secret` can never be
+  lowered.
+- Duplicate directory entries are rejected, since order-dependent labels could be a silent
+  downgrade.
+
+How nested directories resolve (most specific vs most restrictive) is decided with the M2 path guard.
+
+## ADR-016 Every provider must declare `privacy.allowPersonalData` — adopted (M0.1)
+
+Implements M1_READINESS D2 option (a). There is no default: a missing or non-boolean value is a
+config error, and the decision function only grants on `=== true`. `false` means public data only.
+`local_only` data also needs `location: local`, which the schema already restricts to loopback URLs.
+Known limit: a "local" endpoint that is itself a proxy to a cloud service cannot be detected.
+Configuring it as `local` is the owner's responsibility (documented in the example config).
+
+## ADR-017 One HTTP transport; bodies only via egress clearances — adopted (M0.1)
+
+`src/net/http.ts` is the only module that calls `fetch` or imports networking modules;
+`tests/boundaries.test.ts` fails otherwise. The transport:
+
+- sends a request body only when it carries a genuine `EgressClearance` (a `WeakSet`-registered
+  object holding the serialised body) for the same URL origin;
+- refuses redirects, which could re-send a body elsewhere;
+- allows only `GET` without a clearance.
+
+The gate also refuses bodies containing registered secret values. Threat-model scope: mistakes and
+injected instructions, not deliberately malicious AMOS code.
+
+## ADR-018 Timeouts: headers / idle / total; no connect timeout — adopted (M0.1)
+
+Node's built-in `fetch` (undici inside Node) has no public per-request connect timeout. Offering one
+would need the `undici` package as a dependency (M1_READINESS D5 option a). Instead (option b),
+`connectTimeoutMs` was removed, and a config that still uses it gets an explicit error. It is
+replaced by three `AbortController`-based timeouts that the transport really enforces, each tested
+against a loopback server:
+
+- `headersTimeoutMs` — until response headers arrive; includes DNS, connect and TLS.
+- `idleTimeoutMs` — longest silence between body chunks.
+- `requestTimeoutMs` — the whole exchange.
+
+Error codes: `NETWORK_TIMEOUT` (with `phase`), `NETWORK_CANCELLED`, `NETWORK_OFFLINE` and `NETWORK`.
+
+## ADR-019 Private storage: the directory is the boundary — adopted (M0.1)
+
+Sensitive files (database, logs, later backups) live in owner-owned `0700` directories. The
+directory is what stops other users reading, creating or swapping files, and it also closes the race
+between file creation and `chmod`. Files are kept `0600` as defence in depth.
+
+- SQLite gives its `-wal`/`-shm`/`-journal` files the database file's mode.
+- `temp_store = MEMORY` keeps temporary data out of `/tmp`.
+- An existing directory open to others is **refused** rather than `chmod`-ed, because it may be a
+  folder you chose.
+- Symlinked data files are refused.
+- Windows relies on profile ACLs, so these checks don't run there.

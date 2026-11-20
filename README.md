@@ -76,10 +76,24 @@ AMOS works with no configuration. To customise, copy
 Environment variables `AMOS_LOG_LEVEL`, `AMOS_LOG_FILE`, `AMOS_OFFLINE`, `AMOS_PORT` override settings
 for one run; `AMOS_CONFIG_DIR`, `AMOS_DATA_DIR`, `AMOS_STATE_DIR` relocate the directories.
 
+**Privacy (conservative by default).** Data nobody classified is `local_only`: it never leaves this
+machine. Every provider must say `privacy.allowPersonalData: true|false`; `false` means it only ever
+receives data you labelled `public`. `secret` data is never sent anywhere. Details:
+[ARCHITECTURE §10](docs/ARCHITECTURE.md) and the comments in the example config.
+
+**Storage permissions (Linux/macOS).** The data and log directories must be accessible only to
+you (`0700`). AMOS creates them that way and **refuses** existing ones that other users can access,
+rather than silently changing them. Files inside are kept `0600`.
+
 ## Troubleshooting
 
 - `error [CONFIG_INVALID]` — the message lists each bad setting by path (e.g. `server.host`).
-  Unknown keys are rejected on purpose, so check spelling.
+  Unknown keys are rejected on purpose, so check spelling. Upgrading from M0:
+  `network.connectTimeoutMs` was removed (use `headersTimeoutMs`), and each provider now needs
+  `privacy.allowPersonalData`.
 - `error [SECRET_FILE_INSECURE]` — run the `chmod 600 …` command the hint prints.
+- `error [INSECURE_PERMISSIONS]` — a data or log directory is open to other users (or a data file is
+  a symlink); run the `chmod 700 …` the hint prints. `amos doctor` reports this too.
+- `error [PRIVACY_VIOLATION]` — data was about to go somewhere its label forbids; nothing was sent.
 - `amos doctor` prints `FAIL` lines with the reason; it never changes anything.
 - Logs: JSON lines in the log directory from `amos paths` (`amos.log`, rotated at 5 MiB).

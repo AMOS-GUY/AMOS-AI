@@ -40,6 +40,11 @@ M1 is the first milestone that stores private data and contacts providers.
 
 ## Findings
 
+> **Status after M0.1 (2026-11-20):** F1, F2, F3, F4, F5, F6, F9, F10 and F11 are fixed; see
+> [M0.1_HARDENING_REPORT.md](M0.1_HARDENING_REPORT.md). F7 (dev PC Node upgrade) is an owner action.
+> F8 (single log writer) is a rule for M1. F12 and F13 are accepted as they are. The table below is
+> the original finding record.
+
 Severity: **M** = fix before/early in M1 · **L** = small fix, any time · **I** = information.
 
 | #   | Sev | Finding                                                                                                                                                                                                                                                                                                   | Recommendation                                                                                                                                              |

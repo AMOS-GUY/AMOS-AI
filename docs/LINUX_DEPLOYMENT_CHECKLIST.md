@@ -101,9 +101,12 @@ registry at all. _(Untested on the laptop, but the same layout ran in CI and on 
 npm run check
 ```
 
-Expected on Linux: typecheck clean, Biome clean, **11 files, 138 passed, 1 skipped** (the skipped one
-is Windows-only), secret scan clean, build OK. Unlike Windows, the three POSIX permission tests run
-here. Any failure: copy the full output.
+Expected on Linux (as of M0.1): typecheck clean, Biome clean, **17 files, 244 passed, 1 skipped**
+(the skipped one is Windows-only), secret scan clean, build OK. On Windows the same suite shows 230
+passed and 15 skipped: the 15 are POSIX permission tests (secrets file, log/database/WAL/SHM file
+modes, private directories, symlink refusal, doctor directory checks). **These 15 have not yet run
+anywhere.** The laptop (or CI after a push) is their first real run, so this is the most important
+result to send back. Any failure: copy the full output.
 
 ## 6. Configuration and secrets (3 min)
 
@@ -142,6 +145,20 @@ rm -r /tmp/amos-bad
 
 # Env override
 AMOS_LOG_LEVEL=debug $A config show | grep -A1 envOverrides     # lists AMOS_LOG_LEVEL
+
+# M0.1: help never runs the command
+$A doctor --help | head -1          # "Usage: amos doctor [--json]" and no check output
+
+# M0.1: privacy defaults
+$A config show | grep defaultLabel  # defaultLabel: local_only
+mkdir -p /tmp/amos-priv && printf 'privacy:\n  defaultLabel: public\n' > /tmp/amos-priv/config.yaml
+AMOS_CONFIG_DIR=/tmp/amos-priv $A config show; echo "exit $?"  # CONFIG_INVALID … never treated as public, exit 1
+rm -r /tmp/amos-priv
+
+# M0.1: a data directory other users can read is reported (and would be refused)
+mkdir -p /tmp/amos-shared && chmod 755 /tmp/amos-shared
+AMOS_DATA_DIR=/tmp/amos-shared $A doctor; echo "exit $?"       # [FAIL] data dir … is not private … chmod 700, exit 1
+rm -r /tmp/amos-shared
 
 # Nothing is listening (M0 has no server)
 ss -ltnp 2>/dev/null | grep -i node || echo "no node listeners"
@@ -218,7 +235,7 @@ Return to an earlier AMOS version: `git -C ~/src/AMOS-AI checkout <commit>` and 
 
 ## Done when
 
-- [ ] `npm run check`: 138 passed, 1 skipped
+- [ ] `npm run check`: 244 passed, 1 skipped (the 15 POSIX tests ran and passed)
 - [ ] `doctor` exit 0, and both negative tests behave as described
 - [ ] Probe report saved outside the repo, with results sent
 - [ ] `bwrap` result noted

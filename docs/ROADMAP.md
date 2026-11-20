@@ -34,6 +34,20 @@ Acceptance criteria — status as of 2026-11-20 (evidence in [OVERNIGHT_REPORT.m
 - [ ] **Probe executed on the laptop**, results recorded in STATUS.md, provider shortlist decided — **owner action**.
 - [x] Node version pinned (`.nvmrc` 24, engines `>=24.18.0`); README explains setup on Windows, WSL2 and Mint.
 
+## M0.1 — Security corrections and pre-M1 hardening
+
+Scope: the M0 review findings (F1–F4, F5, F6, F10, F11). Report: [M0.1_HARDENING_REPORT.md](M0.1_HARDENING_REPORT.md).
+
+- [x] F1: private storage — owner-only directories, `0600` database/WAL/SHM/journal/log files, symlinks refused, `temp_store = MEMORY` (POSIX tests written; **run on Linux pending**)
+- [x] F2: unclassified data is `local_only`; `public` rejected as a default; unknown/empty labels fail closed; downgrades need explicit owner reclassification
+- [x] F3: required `privacy.allowPersonalData` per provider; egress gate with clearances; single HTTP transport (static boundary test)
+- [x] F4: `connectTimeoutMs` removed; headers/idle/total timeouts enforced and tested; distinct error codes
+- [x] F5: `--help` never runs a command; unsupported flags and arguments rejected
+- [x] F6: CI actions v7 (node24 runtime) — **not yet run** (needs a push)
+- [x] F10: `amos doctor` reports non-private data/log directories and a writable config directory
+- [x] F11: `.gitignore` covers SQLite companion files and probe reports
+- [ ] F7: dev PC Node upgrade to 24.22.3 — **owner action** (system install)
+
 ## M1 — Core agent
 
 Scope: `amosd` HTTP API + SSE, local auth token, web chat UI, `amos` CLI chat, provider interface,

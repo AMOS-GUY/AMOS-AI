@@ -33,7 +33,7 @@ MCP servers** on top of that core.
 | --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | R1  | **Model provider availability on the target network** — a provider reachable from the Windows dev box (via VPN) may be blocked or slow from the laptop. Some providers do not serve mainland China at all. | Agent unusable                  | Provider abstraction with ordered fallbacks; **connectivity probe run on the laptop in M0** before committing to a provider; local Ollama fallback.                                              |
 | R2  | **Prompt injection → harmful actions.** Files, web pages, repos and MCP tool descriptions can contain instructions.                                                                                        | Data loss, data exfiltration    | Policy enforced in code, never by the model; taint tracking raises approval requirements once untrusted content is in context; no auto-approve for destructive/egress actions. See THREAT_MODEL. |
-| R3  | **Private data sent to cloud models.** Every file the agent reads goes into a prompt, i.e. to the provider.                                                                                                | Privacy breach                  | Per-directory _egress labels_ (`cloud-ok` / `local_only`); local-only content is only ever sent to local models.                                                                                 |
+| R3  | **Private data sent to cloud models.** Every file the agent reads goes into a prompt, i.e. to the provider.                                                                                                | Privacy breach                  | Labels with a conservative default (unclassified = `local_only`), explicit per-provider `allowPersonalData`, and one egress gate + transport that every outbound body must pass (M0.1, §10).     |
 | R4  | **Local models are weak on this hardware.** i7-11th gen, 16 GB RAM, no discrete GPU → realistically 3–8B quantised models at a few tokens/s; small models call tools unreliably.                           | Offline mode disappoints        | Treat local models as _degraded mode_ (chat, summarise, simple tools), not a full replacement. Measure on the laptop before promising anything.                                                  |
 | R5  | **Native dependencies fail to install** (prebuilt binaries are downloaded from GitHub at install time, which is unreliable on the target).                                                                 | Can't install/update            | Zero native npm dependencies in the core: use Node's built-in `node:sqlite`; build a self-contained release tarball on the dev machine and copy it over.                                         |
 | R6  | **Dev environment ≠ target.** WSL2 Ubuntu is not Linux Mint, and the dev box has a VPN.                                                                                                                    | "Works on my machine"           | CI on Linux, explicit laptop test checklist per milestone (§16), offline/blocked-network tests.                                                                                                  |
@@ -146,7 +146,9 @@ AMOS-AI/
 │   ├── core/               # ✅ pure types + rules: errors, ids, task states, privacy gate, provider capabilities, permissions
 │   ├── config/             # ✅ schema, defaults, layered loading, env vars, secrets, platform paths
 │   ├── logging/            # ✅ structured JSON logger, redaction, file sink
-│   ├── storage/            # ✅ node:sqlite wrapper + migrations (repositories in M1)
+│   ├── storage/            # ✅ node:sqlite wrapper (private files, temp_store=MEMORY) + migrations (repositories in M1)
+│   ├── platform/           # ✅ M0.1 owner-only directories/files (POSIX permission model)
+│   ├── net/                # ✅ M0.1 the single HTTP transport: enforced timeouts, cleared bodies only
 │   ├── cli/                # ✅ `amos` command: doctor, paths, config show
 │   ├── providers/          #    M1 ModelProvider adapters, router, retry, usage
 │   ├── agent/              #    M1 agent loop, task runner
@@ -311,11 +313,17 @@ per vendor, so a new China-available provider needs only config. The M0 type for
   partial output, it surfaces the error rather than silently duplicating work.
 - **Falls back** to the next entry when retries are exhausted or a circuit breaker for a provider is
   open (N consecutive failures → skip it for a cool-down period).
-- **Respects privacy:** if the context contains `local_only` data, entries with `location: "cloud"` are
-  skipped. If none remain, the task stops with a clear message instead of leaking data.
+- **Respects privacy:** every candidate passes through the egress gate (§10), which applies each
+  provider's own `privacy.allowPersonalData` and location. A fallback to another provider is a new
+  egress decision. If no candidate may receive the data, the task stops with a clear message
+  instead of leaking it.
 - **Never falls back across providers in the middle of an approval-pending tool sequence** without
   re-sending full context, and tells the user which model answered.
-- Applies **timeouts** separately for connect, first token, and idle-between-tokens.
+- Applies the **timeouts the transport enforces** (`src/net/http.ts`, M0.1): `headersTimeoutMs`
+  (until response headers — this includes DNS, connect and TLS; there is no separate connect
+  timeout, because built-in `fetch` cannot provide one), `idleTimeoutMs` (silence between body
+  chunks, i.e. between streamed tokens) and `requestTimeoutMs` (whole exchange). Timeouts,
+  cancellation, offline refusal and transport failures are separate error codes.
 
 **Context management.** Token estimates per model; when near the window: drop old tool outputs
 first (keeping a summary line), then summarise older turns with the current model; never drop the
@@ -419,21 +427,39 @@ conversational "yes" typed into chat, nor a skill's instructions can bypass it: 
 persisted record bound to one specific pending action (tool + canonical arguments hash), created only
 through the authenticated approval API. Chat text is never parsed as approval.
 
-**Privacy classification and the egress gate.** Every piece of data entering a task carries a label:
+**Privacy classification and the egress gate** (implemented in M0.1 — `src/core/privacy.ts`,
+`src/core/egress-gate.ts`, `src/net/http.ts`; ADR-012, ADR-015–017). Every piece of data carries a
+label:
 
-| Label        | Meaning                                           | May go to                                                        |
-| ------------ | ------------------------------------------------- | ---------------------------------------------------------------- |
-| `public`     | Public web content, open-source code              | anywhere                                                         |
-| `personal`   | Default for owner files in `cloud-ok` directories | local models; cloud models on the owner's approved provider list |
-| `local_only` | Directories/sources the owner marks private       | local models and local tools only                                |
-| `secret`     | Credentials, keys, tokens                         | nowhere — never placed in a prompt, tool argument or log         |
+| Label        | Meaning                                                       | May be sent to (model providers)                                           |
+| ------------ | ------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `public`     | Public web content, open-source code — only when labelled so  | any enabled provider                                                       |
+| `personal`   | Owner data the owner allows to leave the machine              | enabled providers with `privacy.allowPersonalData: true`                   |
+| `local_only` | **Default for unclassified data**; directories marked private | enabled providers with `location: local` **and** `allowPersonalData: true` |
+| `secret`     | Credentials, keys, tokens                                     | nothing, ever                                                              |
 
-Labels propagate: a context containing any `local_only` item is `local_only` as a whole (the most
-restrictive label wins). One function — the **egress gate** — is called before _every_ boundary
-crossing: model provider requests, external/MCP tool calls with network effect, web requests, and
-(M5) responses to remote clients. Destinations are classified as `local_model`, `cloud_model`,
-`external_tool` or `remote_client`. The decision table is implemented and tested in M0
-(`src/core/privacy.ts`); wiring it into real calls happens as each boundary is built.
+Rules (all fail closed):
+
+- **Unclassified data is `local_only`.** `privacy.defaultLabel` may be `local_only` (default) or
+  `personal`; `public` is rejected. Unknown labels are rejected.
+- **The most restrictive label wins** when data is combined; combining _no_ labels is an error, so a
+  forgotten label cannot turn into "public".
+- **Lowering a label** needs an explicit owner reclassification with a reason. `secret` can never be
+  lowered.
+- **Every provider must declare `privacy.allowPersonalData`** (no default). Disabled providers
+  receive nothing.
+- **External tools and remote clients** have no data policy yet, so they may receive `public` data
+  only (until M3/M5 define one).
+
+Enforcement: the **EgressGate** is built once from validated config (`createEgressGate`). Callers
+name a provider and hand over labelled items. The gate computes the label itself, applies the
+provider's policy, refuses any body that contains a known secret value (defence in depth against
+mislabelled data), and returns an **EgressClearance**: the serialised body bound to the provider's
+URL origin, registered in a module-private `WeakSet`. The **HTTP transport** is the only module
+allowed to make requests (a test enforces this). It sends a body only when it carries a genuine
+clearance for the request's origin, sends nothing but `GET` without one, refuses redirects, and in
+offline mode reaches loopback only. What this does not stop is AMOS code that deliberately builds a
+body from data it didn't declare to the gate; that contract is kept by review and tests.
 
 **Taint tracking.** When a task has read untrusted content (web page, downloaded file, unfamiliar
 repo, MCP output), it becomes _tainted_: medium/high-risk actions that were `allow` become `ask`.
@@ -490,19 +516,19 @@ Assumption to verify on the laptop: Linux Mint 22.x (Ubuntu 24.04 base). Everyth
 the owner's home directory; **no root is needed** except for optional system packages
 (bubblewrap, git, python3-venv) that the owner installs with apt.
 
-| Concern                | Strategy                                                                                                                                                                                                                                                                                             |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Packaging**          | `npm run package` on the dev machine → `amos-<version>.tar.gz`: compiled JS, production `node_modules`, built web UI (M1+), `deploy/` files, checksum file. No native addons ⇒ one tarball for Linux/macOS/Windows.                                                                                  |
-| **Dependencies**       | Runtime: Node 24 LTS only (+ optional: git, bubblewrap, Python 3 for M4 workers, Ollama). Install Node from the official tarball (or a trusted mirror) into `~/.local/opt/node` — apt's Node is too old. Production npm deps are bundled in the tarball, so the laptop never needs the npm registry. |
-| **Installation**       | Copy tarball (USB/scp) → verify checksum → unpack into `~/.local/opt/amos/<version>/` → symlink `~/.local/opt/amos/current` → symlink `~/.local/bin/amos` → `amos doctor`.                                                                                                                           |
-| **Configuration**      | `~/.config/amos/config.yaml` (owner-edited, validated at start), `~/.config/amos/secrets.env` (mode 0600), `AMOS_*` environment variables override for one run. `amos config show` prints the effective config with secrets redacted.                                                                |
-| **Data**               | `~/.local/share/amos/` (SQLite DB, backups, trash). Logs in `~/.local/state/amos/logs/`.                                                                                                                                                                                                             |
-| **Backups**            | `amos backup` (M6) uses SQLite's online backup API (`node:sqlite` `backup()`) to write a consistent snapshot, plus a tarball of config (secrets excluded unless asked). Automatic snapshot before every migration and upgrade. Restores tested in M6.                                                |
-| **Upgrades**           | Unpack new version beside the old → `amos doctor` with the new binary → stop service → back up DB → switch `current` symlink → start → migrations run (forward-only, each in a transaction) → health check.                                                                                          |
-| **Rollback**           | Stop → point `current` at the previous version → restore the pre-upgrade DB snapshot (because migrations are forward-only) → start. Last two versions are kept.                                                                                                                                      |
-| **Startup / shutdown** | M6: `systemd --user` unit `amosd.service` (`Restart=on-failure`, `TimeoutStopSec`), optional `loginctl enable-linger`. On SIGTERM: stop accepting work, mark running tasks `interrupted`, kill child process groups, close DB, exit. Until M6: started manually.                                     |
-| **Logs**               | JSON lines to stdout (captured by journald under systemd: `journalctl --user -u amosd`) and to a size-rotated file in the state dir. Secrets and document contents are never logged (§ logging policy in `src/logging`).                                                                             |
-| **Health**             | `amos doctor`: Node version, `node:sqlite`, dir permissions, secrets file mode, bubblewrap, git, Python, (M1+) provider reachability, Ollama, disk space.                                                                                                                                            |
+| Concern                | Strategy                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Packaging** (M2.5)   | `npm run package` (not yet implemented) on the dev machine → `amos-<version>.tar.gz`: compiled JS, production `node_modules`, built web UI (M1+), `deploy/` files, checksum file. No native addons ⇒ one tarball for Linux/macOS/Windows.                                                                                                                                                                                                                  |
+| **Dependencies**       | Runtime: Node 24 LTS only (+ optional: git, bubblewrap, Python 3 for M4 workers, Ollama). Install Node from the official tarball (or a trusted mirror) into `~/.local/opt/node` — apt's Node is too old. Production npm deps are bundled in the tarball, so the laptop never needs the npm registry.                                                                                                                                                       |
+| **Installation**       | Copy tarball (USB/scp) → verify checksum → unpack into `~/.local/opt/amos/<version>/` → symlink `~/.local/opt/amos/current` → symlink `~/.local/bin/amos` → `amos doctor`.                                                                                                                                                                                                                                                                                 |
+| **Configuration**      | `~/.config/amos/config.yaml` (owner-edited, validated at start), `~/.config/amos/secrets.env` (mode 0600), `AMOS_*` environment variables override for one run. `amos config show` prints the effective config with secrets redacted.                                                                                                                                                                                                                      |
+| **Data**               | `~/.local/share/amos/` (SQLite DB, backups, trash). Logs in `~/.local/state/amos/logs/`.                                                                                                                                                                                                                                                                                                                                                                   |
+| **Backups**            | `amos backup` (M6) uses SQLite's online backup API (`node:sqlite` `backup()`) to write a consistent snapshot, plus a tarball of config (secrets excluded unless asked). Automatic snapshot before every migration and upgrade. Backup files must be written with the same private-file rules as the database (`ensurePrivateFile` in `src/platform/private-fs.ts`, 0600 in a 0700 directory) — a backup is a full copy of the data. Restores tested in M6. |
+| **Upgrades**           | Unpack new version beside the old → `amos doctor` with the new binary → stop service → back up DB → switch `current` symlink → start → migrations run (forward-only, each in a transaction) → health check.                                                                                                                                                                                                                                                |
+| **Rollback**           | Stop → point `current` at the previous version → restore the pre-upgrade DB snapshot (because migrations are forward-only) → start. Last two versions are kept.                                                                                                                                                                                                                                                                                            |
+| **Startup / shutdown** | M6: `systemd --user` unit `amosd.service` (`Restart=on-failure`, `TimeoutStopSec`), optional `loginctl enable-linger`. On SIGTERM: stop accepting work, mark running tasks `interrupted`, kill child process groups, close DB, exit. Until M6: started manually.                                                                                                                                                                                           |
+| **Logs**               | JSON lines to stdout (captured by journald under systemd: `journalctl --user -u amosd`) and to a size-rotated file in the state dir. Secrets and document contents are never logged (§ logging policy in `src/logging`).                                                                                                                                                                                                                                   |
+| **Health**             | `amos doctor`: Node version, `node:sqlite`, dir permissions, secrets file mode, bubblewrap, git, Python, (M1+) provider reachability, Ollama, disk space.                                                                                                                                                                                                                                                                                                  |
 
 **macOS later:** the same tarball, paths from the platform table (§4), a `launchd` plist instead of
 systemd, and a stricter approval policy in place of bubblewrap (macOS has no equivalent we can rely on). No Mac-specific code is needed now
