@@ -43,6 +43,17 @@ export class Redactor {
     if (value.length >= MIN_MASKABLE_SECRET_LENGTH) this.#secrets.add(value);
   }
 
+  /**
+   * True if `text` contains a registered secret value, as-is or JSON-escaped. The egress gate uses
+   * this as a last line of defence against secrets carried inside mislabelled data.
+   */
+  containsKnownSecret(text: string): boolean {
+    for (const secret of this.#secrets) {
+      if (text.includes(secret) || text.includes(JSON.stringify(secret).slice(1, -1))) return true;
+    }
+    return false;
+  }
+
   redactString(input: string): string {
     let out = input;
     // Longest first, so a secret containing another secret is fully masked.

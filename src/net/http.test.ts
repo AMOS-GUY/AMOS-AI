@@ -4,6 +4,7 @@
  *
  * Uses a loopback-only test server on an ephemeral port, closed after each test.
  */
+import { getEventListeners } from "node:events";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
@@ -283,5 +284,24 @@ describe("HttpClient — only cleared bodies leave", () => {
       "PRIVACY_VIOLATION",
     );
     expect(requestsSeen).toBe(0);
+  });
+});
+
+describe("HttpClient — resource cleanup", () => {
+  it("removes its listener from the caller's signal when a timeout fires on an unread body", async () => {
+    const base = await serve();
+    const ac = new AbortController();
+    await client({ requestTimeoutMs: 300 }).request({ url: `${base}/stall`, signal: ac.signal });
+    expect(getEventListeners(ac.signal, "abort")).toHaveLength(1);
+    await new Promise((r) => setTimeout(r, 450)); // body never read; total timeout fires
+    expect(getEventListeners(ac.signal, "abort")).toHaveLength(0);
+  });
+
+  it("removes its listener after a normal response is read", async () => {
+    const base = await serve();
+    const ac = new AbortController();
+    const res = await client().request({ url: `${base}/ok`, signal: ac.signal });
+    await res.text();
+    expect(getEventListeners(ac.signal, "abort")).toHaveLength(0);
   });
 });

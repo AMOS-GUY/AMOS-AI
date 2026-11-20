@@ -60,5 +60,12 @@ export function createRuntime(inputs: RuntimeInputs): Runtime {
     );
   }
   const logger = new Logger({ level: loaded.config.logging.level, sinks, redactor });
-  return { paths, loaded, secrets, redactor, logger, egress: createEgressGate(loaded.config) };
+  return {
+    paths,
+    loaded,
+    secrets,
+    redactor,
+    logger,
+    egress: createEgressGate(loaded.config, redactor),
+  };
 }

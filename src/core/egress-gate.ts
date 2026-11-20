@@ -55,8 +55,18 @@ const issued = new WeakSet<object>();
 
 export class EgressGate {
   readonly #providers: ReadonlyMap<string, ProviderPolicy>;
+  readonly #containsSecret: (body: string) => boolean;
 
-  constructor(policies: Iterable<ProviderPolicy>) {
+  /**
+   * @param containsSecret Last line of defence: returns true if a serialised body contains a known
+   *   secret value (wired to the log redactor's registered secrets by createEgressGate). Labels can
+   *   be wrong — a key pasted into a note labelled "personal" — so the gate also checks content.
+   */
+  constructor(
+    policies: Iterable<ProviderPolicy>,
+    containsSecret: (body: string) => boolean = () => false,
+  ) {
+    this.#containsSecret = containsSecret;
     const map = new Map<string, ProviderPolicy>();
     for (const p of policies) {
       if (map.has(p.providerId)) {
@@ -146,6 +156,13 @@ export class EgressGate {
     }
     if (typeof body !== "string") {
       throw new AmosError("PRIVACY_VIOLATION", "The request body could not be serialised as JSON.");
+    }
+    if (this.#containsSecret(body)) {
+      // The message names no value: the whole point is not to repeat the secret anywhere.
+      throw new AmosError("PRIVACY_VIOLATION", "The outbound data contains a known secret value.", {
+        details: { providerId },
+        hint: "Remove the secret from the data. Secrets are never sent, whatever their label.",
+      });
     }
     const clearance: EgressClearance = Object.freeze({
       providerId: policy.providerId,

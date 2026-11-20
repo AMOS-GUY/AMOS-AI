@@ -121,6 +121,8 @@ export class HttpClient {
       if (phase === undefined) {
         phase = p;
         controller.abort();
+        // Release timers and the caller's listener now, even if nobody ever reads the body.
+        cleanup();
       }
     };
     const timers = new Set<NodeJS.Timeout>();

@@ -1,5 +1,6 @@
 /** F3 regression tests: the egress gate and its clearances, including bypass attempts. */
 import { describe, expect, it } from "vitest";
+import { Redactor } from "../logging/redact.ts";
 import {
   type EgressClearance,
   EgressGate,
@@ -243,5 +244,46 @@ describe("verifyClearance (used by the transport)", () => {
     );
     denied(() => verifyClearance(genuine, new URL("https://strict.example.evil.test/")));
     denied(() => verifyClearance(genuine, new URL("http://strict.example/"))); // scheme is part of the origin
+  });
+});
+
+describe("secret scanning (defence in depth against mislabelled data)", () => {
+  const redactor = new Redactor();
+  const key = ["sk", "live", "0123456789abcdef"].join("-");
+  const quoted = 'pass"wordwith-escapes';
+  redactor.addSecret(key);
+  redactor.addSecret(quoted);
+  const scanned = new EgressGate(policies, (body) => redactor.containsKnownSecret(body));
+
+  it("refuses a body containing a known secret even when the data is labelled public", () => {
+    const e = denied(
+      () =>
+        scanned.authorizeForProvider(
+          "cloud-trusted",
+          [{ label: "public", content: `my key is ${key}` }],
+          asMessages,
+        ),
+      "known secret",
+    );
+    expect(JSON.stringify(e)).not.toContain(key);
+    expect(e.message).not.toContain(key);
+  });
+
+  it("also detects secrets after JSON escaping", () => {
+    denied(
+      () =>
+        scanned.authorizeForProvider("ollama", [{ label: "public", content: quoted }], asMessages),
+      "known secret",
+    );
+  });
+
+  it("passes ordinary data", () => {
+    expect(
+      scanned.authorizeForProvider(
+        "cloud-trusted",
+        [{ label: "public", content: "hello" }],
+        asMessages,
+      ).label,
+    ).toBe("public");
   });
 });

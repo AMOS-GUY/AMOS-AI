@@ -1,4 +1,5 @@
 import { EgressGate, type ProviderPolicy } from "../core/egress-gate.ts";
+import type { Redactor } from "../logging/redact.ts";
 import type { AmosConfig } from "./schema.ts";
 
 /**
@@ -15,6 +16,10 @@ export function providerPolicies(config: AmosConfig): ProviderPolicy[] {
   }));
 }
 
-export function createEgressGate(config: AmosConfig): EgressGate {
-  return new EgressGate(providerPolicies(config));
+/** @param redactor Its registered secret values are refused in any outbound body. */
+export function createEgressGate(config: AmosConfig, redactor?: Redactor): EgressGate {
+  return new EgressGate(
+    providerPolicies(config),
+    redactor ? (body) => redactor.containsKnownSecret(body) : undefined,
+  );
 }

@@ -249,3 +249,15 @@ describe("FileSink", () => {
     expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
   });
 });
+
+describe("Redactor.containsKnownSecret", () => {
+  it("finds registered values raw or JSON-escaped, ignores short values", () => {
+    const r = new Redactor();
+    r.addSecret('abc"defghi');
+    r.addSecret("short");
+    expect(r.containsKnownSecret('x abc"defghi y')).toBe(true);
+    expect(r.containsKnownSecret(JSON.stringify({ v: 'abc"defghi' }))).toBe(true);
+    expect(r.containsKnownSecret("short")).toBe(false);
+    expect(r.containsKnownSecret("nothing here")).toBe(false);
+  });
+});
