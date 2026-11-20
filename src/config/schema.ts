@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isLoopbackHost } from "../core/loopback.ts";
 import { modelCapabilitiesSchema } from "../core/provider.ts";
 
 /**
@@ -114,8 +115,6 @@ const privacySchema = z
     });
   });
 
-const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
-
 const providerSchema = z
   .object({
     kind: z.literal("openai-compatible"),
@@ -151,7 +150,24 @@ const providerSchema = z
   .strict()
   .superRefine((provider, ctx) => {
     const url = new URL(provider.baseUrl);
-    const loopback = LOOPBACK_HOSTS.has(url.hostname);
+    const loopback = isLoopbackHost(url.hostname);
+    // Credentials and query strings in a URL end up in config output and logs; providers get
+    // their keys via apiKeyEnv (headers) only (M0.5 audit, SEC-04).
+    if (url.username !== "" || url.password !== "") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["baseUrl"],
+        message:
+          "must not contain a username or password; put the key in secrets.env and use apiKeyEnv",
+      });
+    }
+    if (url.search !== "" || url.hash !== "") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["baseUrl"],
+        message: "must not contain a query string or fragment (keys never go in URLs)",
+      });
+    }
     if (url.protocol === "http:" && !loopback) {
       ctx.addIssue({
         code: "custom",

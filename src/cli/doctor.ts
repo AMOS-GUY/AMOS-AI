@@ -8,6 +8,7 @@ import type { AmosPaths } from "../config/paths.ts";
 import { loadSecrets } from "../config/secrets.ts";
 import { formatErrorForUser } from "../core/errors.ts";
 import { Redactor } from "../logging/redact.ts";
+import { envProxyActive } from "../net/http.ts";
 import { insecureDirReason } from "../platform/private-fs.ts";
 import { sqliteCapabilities } from "../storage/sqlite.ts";
 
@@ -49,6 +50,7 @@ export function runDoctor(inputs: DoctorInputs): CheckResult[] {
     checkSecrets(inputs),
     ...checkDirectories(inputs.paths),
     checkUnknownVariables(inputs.env),
+    checkProxy(inputs.env),
     checkTool("git", findTool("git", ["--version"]), "warn", "needed for coding tasks (M2)"),
     pythonCheck(findTool, inputs.platform),
     sandboxCheck(findTool, inputs.platform),
@@ -212,6 +214,73 @@ function sandboxCheck(
   );
 }
 
+/**
+ * Proxy settings (M0.5 audit, SEC-01). With Node's env-proxy mode on, AMOS's transport refuses to
+ * send anything, because Node would route even 127.0.0.1 traffic through the proxy. Plain
+ * HTTP(S)_PROXY variables without that mode are ignored by Node's fetch, so AMOS connects directly.
+ */
+export function checkProxy(
+  env: DoctorInputs["env"],
+  execArgv: readonly string[] = process.execArgv,
+): CheckResult {
+  if (envProxyActive(env, execArgv)) {
+    return {
+      name: "proxy",
+      status: "fail",
+      detail:
+        "Node env-proxy mode is on (NODE_USE_ENV_PROXY / --use-env-proxy): AMOS will refuse all network requests, because local-model traffic would go through the proxy. Unset it.",
+    };
+  }
+  const vars = [
+    "HTTPS_PROXY",
+    "HTTP_PROXY",
+    "https_proxy",
+    "http_proxy",
+    "ALL_PROXY",
+    "all_proxy",
+  ].filter((v) => env[v]);
+  return vars.length === 0
+    ? { name: "proxy", status: "ok", detail: "no proxy configured; AMOS connects directly" }
+    : {
+        name: "proxy",
+        status: "info",
+        detail: `${vars.join(", ")} set but not used: AMOS connects directly (proxy support is undecided, D8)`,
+      };
+}
+
+/** Variables a version check legitimately needs. Everything else — notably API keys — stays out. */
+const CHILD_ENV_KEYS = [
+  "PATH",
+  "HOME",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TMPDIR",
+  // Windows: process creation and executable lookup need these.
+  "SYSTEMROOT",
+  "SystemRoot",
+  "WINDIR",
+  "PATHEXT",
+  "COMSPEC",
+  "TEMP",
+  "TMP",
+  "USERPROFILE",
+  "APPDATA",
+  "LOCALAPPDATA",
+] as const;
+
+/** Minimal environment for helper processes (M0.5 audit, SEC-03). */
+export function childEnv(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of CHILD_ENV_KEYS) {
+    const value = env[key];
+    if (value !== undefined) out[key] = value;
+  }
+  return out;
+}
+
 function defaultFindTool(command: string, args: readonly string[]): string | null {
   try {
     const out = execFileSync(command, args, {
@@ -219,6 +288,8 @@ function defaultFindTool(command: string, args: readonly string[]): string | nul
       // from the home directory means `amos doctor` inside an untrusted repository cannot be
       // tricked into executing a planted git.exe / python.exe.
       cwd: os.homedir(),
+      // Never hand API keys or other secrets in the environment to helper programs.
+      env: childEnv(),
       encoding: "utf8",
       timeout: 5000,
       stdio: ["ignore", "pipe", "pipe"],

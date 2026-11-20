@@ -169,9 +169,18 @@ async function main(): Promise<void> {
   );
   console.log(`AMOS connectivity probe — ${new Date().toISOString()}`);
   console.log(`node ${process.version}, ${process.platform}/${os.arch()}, timeout ${timeoutMs} ms`);
-  if (proxyVars.length > 0) {
+  // Kept self-contained (no src/ imports) so the script runs on a bare Node install.
+  const envProxyMode =
+    !["", "0", "false"].includes((process.env["NODE_USE_ENV_PROXY"] ?? "").trim().toLowerCase()) ||
+    process.execArgv.includes("--use-env-proxy") ||
+    /(^|\s)--use-env-proxy(=|\s|$)/.test(process.env["NODE_OPTIONS"] ?? "");
+  if (envProxyMode) {
     console.log(
-      `note: proxy variables set (${proxyVars.join(", ")}); Node fetch ignores them by default.`,
+      "WARNING: Node env-proxy mode is on (NODE_USE_ENV_PROXY / --use-env-proxy): these results describe the proxy route, not direct access. AMOS itself refuses to send requests in this mode.",
+    );
+  } else if (proxyVars.length > 0) {
+    console.log(
+      `note: proxy variables set (${proxyVars.join(", ")}); Node fetch ignores them, so results are for direct access.`,
     );
   }
   // Probes run concurrently; each has its own timeout.

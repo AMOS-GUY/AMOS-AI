@@ -1,6 +1,7 @@
 import type { AmosConfig } from "../config/schema.ts";
 import { type EgressClearance, verifyClearance } from "../core/egress-gate.ts";
 import { AmosError } from "../core/errors.ts";
+import { isLoopbackHost } from "../core/loopback.ts";
 
 /**
  * The only outbound HTTP path in AMOS (M0.1 F4; enforced by tests/boundaries.test.ts).
@@ -61,8 +62,28 @@ type AbortPhase = "headers" | "idle" | "total" | "cancelled" | "too_large" | "cl
 
 const DEFAULT_MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
 
-export function isLoopbackHost(hostname: string): boolean {
-  return hostname === "localhost" || hostname === "[::1]" || /^127(\.\d{1,3}){3}$/.test(hostname);
+export { isLoopbackHost };
+
+/**
+ * Whether Node's built-in environment-proxy support is switched on for this process
+ * (`NODE_USE_ENV_PROXY=1`, or `--use-env-proxy` on the command line / in NODE_OPTIONS).
+ *
+ * Why AMOS refuses to send anything while it is on (M0.5 audit, SEC-01): with it enabled and
+ * HTTP_PROXY set, Node tunnels even plain-http requests to 127.0.0.1 through the proxy
+ * (observed: `CONNECT 127.0.0.1:<port>` at the proxy, Node 24.18). Local-model traffic — including
+ * local_only data — would leave the machine in plain text, and offline mode would no longer mean
+ * "loopback only". Proxy support is an open owner decision (M1_READINESS D8); until it is designed,
+ * the transport fails closed.
+ */
+export function envProxyActive(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+  execArgv: readonly string[] = process.execArgv,
+): boolean {
+  const flag = (env["NODE_USE_ENV_PROXY"] ?? "").trim().toLowerCase();
+  if (flag !== "" && flag !== "0" && flag !== "false") return true;
+  if (execArgv.some((a) => a === "--use-env-proxy" || a.startsWith("--use-env-proxy=")))
+    return true;
+  return /(^|\s)--use-env-proxy(=|\s|$)/.test(env["NODE_OPTIONS"] ?? "");
 }
 
 export class HttpClient {
@@ -86,6 +107,23 @@ export class HttpClient {
     const url = new URL(req.url);
     if (url.protocol !== "https:" && url.protocol !== "http:") {
       throw new AmosError("NETWORK", `Unsupported protocol ${url.protocol}`);
+    }
+    // Checked per request against the real process state — not a constructor option a caller
+    // could override.
+    if (envProxyActive()) {
+      throw new AmosError(
+        "NETWORK",
+        "Node's environment proxy mode is enabled (NODE_USE_ENV_PROXY / --use-env-proxy); AMOS sends nothing while it is on.",
+        {
+          details: { cause: "ENV_PROXY_UNSUPPORTED" },
+          hint: "Unset NODE_USE_ENV_PROXY and remove --use-env-proxy. It would route even local-model traffic through the proxy. Proxy support is a pending decision (M1_READINESS D8).",
+        },
+      );
+    }
+    if (url.username !== "" || url.password !== "") {
+      throw new AmosError("NETWORK", "Refusing a URL with embedded credentials.", {
+        hint: "Put credentials in secrets.env; they are sent as headers, never in URLs.",
+      });
     }
     const loopback = isLoopbackHost(url.hostname);
     if (this.#offline && !loopback) {
