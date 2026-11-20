@@ -95,5 +95,8 @@ rather than silently changing them. Files inside are kept `0600`.
 - `error [INSECURE_PERMISSIONS]` — a data or log directory is open to other users (or a data file is
   a symlink); run the `chmod 700 …` the hint prints. `amos doctor` reports this too.
 - `error [PRIVACY_VIOLATION]` — data was about to go somewhere its label forbids; nothing was sent.
+- `error [NETWORK]` … `env-proxy` — Node's environment proxy mode is on (`NODE_USE_ENV_PROXY=1` or
+  `--use-env-proxy`). AMOS refuses to send anything in that mode, because local-model traffic would go
+  through the proxy. Unset it; plain `HTTP_PROXY`/`HTTPS_PROXY` variables are ignored and harmless.
 - `amos doctor` prints `FAIL` lines with the reason; it never changes anything.
 - Logs: JSON lines in the log directory from `amos paths` (`amos.log`, rotated at 5 MiB).

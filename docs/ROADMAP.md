@@ -48,6 +48,34 @@ Scope: the M0 review findings (F1–F4, F5, F6, F10, F11). Report: [M0.1_HARDENI
 - [x] F11: `.gitignore` covers SQLite companion files and probe reports
 - [ ] F7: dev PC Node upgrade to 24.22.3 — **owner action** (system install)
 
+## M0.5 — Final readiness audit and M1 launch gate
+
+Report: [M0.5_FINAL_AUDIT.md](M0.5_FINAL_AUDIT.md) · gate: [M1_LAUNCH_GATE.md](M1_LAUNCH_GATE.md).
+
+- [x] Repository, documentation and dependency audit (DOC-01…07 corrected)
+- [x] Security review of all source (SECURITY_AUDIT_M0_5: 0 critical, 0 high, 1 medium fixed, 4 low, 8 info)
+- [x] SEC-01 env-proxy refusal, SEC-03 doctor child env, SEC-04 URL credentials, SEC-05 single loopback rule, `ignore-scripts` — tested on Windows
+- [x] Linux validation recorded from your laptop run ([LINUX_VALIDATION.md](LINUX_VALIDATION.md))
+- [x] Provider strategy ([PROVIDER_STRATEGY.md](PROVIDER_STRATEGY.md))
+- [ ] Laptop re-run of the M0.5 suite (expect 261 passed / 1 skipped) — **needs a push and your run**
+- [ ] SEC-02 (parent-directory check), SEC-06 (SHA-pinned actions) — open, Low
+
+## Milestone status overview (2026-11-21)
+
+| Milestone              | Status                                                                     |
+| ---------------------- | -------------------------------------------------------------------------- |
+| M0 Foundation          | **Completed and verified** — Windows, Ubuntu CI, laptop (reported)         |
+| M0.1 Hardening         | **Completed and verified** — Windows, Ubuntu CI, laptop (reported: 244/1)  |
+| M0.5 Audit             | **Completed** on the dev PC; laptop re-run of its fixes pending            |
+| M1 Core agent          | **Requires your approval** — CONDITIONAL GO for M1a (M1_LAUNCH_GATE P1–P5) |
+| M1b Web UI             | **Blocked** on D3 (browser authentication) and ADR-004                     |
+| M2 Tool execution      | Planned. Needs sandbox and path-guard design notes first                   |
+| M2.5 Laptop checkpoint | Planned                                                                    |
+| M3 Skills & MCP / REA  | Planned                                                                    |
+| M4 Knowledge           | Planned (decide `secure_delete` and labels on stored content during M1)    |
+| M5 Remote              | Planned. Needs a remote-access ADR first                                   |
+| M6 Reliability         | Planned                                                                    |
+
 ## M1 — Core agent
 
 Scope: `amosd` HTTP API + SSE, local auth token, web chat UI, `amos` CLI chat, provider interface,

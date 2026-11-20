@@ -25,7 +25,7 @@ echo "umask $(umask)"              # expect 0002 or 0022
 
 ## 2. Install Node.js 24 LTS — no root needed (10 min)
 
-**Version: 24.22.3** (latest 24 LTS, released 2026-11-10, a security release; CI already tests it).
+**Version: 24.22.3** (latest 24 LTS, released 2026-11-10, a security release; CI most likely runs it too, since `.nvmrc` = `24` resolves to the newest 24.x — inferred, the CI log needs a sign-in to confirm).
 24.18.0 is the minimum AMOS accepts, but it lacks security fixes, and REA (M3) needs ≥ 24.22.1.
 
 Pick whichever source works from the laptop:
@@ -101,12 +101,12 @@ registry at all. _(Untested on the laptop, but the same layout ran in CI and on 
 npm run check
 ```
 
-Expected on Linux (as of M0.1): typecheck clean, Biome clean, **17 files, 244 passed, 1 skipped**
-(the skipped one is Windows-only), secret scan clean, build OK. On Windows the same suite shows 230
-passed and 15 skipped: the 15 are POSIX permission tests (secrets file, log/database/WAL/SHM file
-modes, private directories, symlink refusal, doctor directory checks). **These 15 have not yet run
-anywhere.** The laptop (or CI after a push) is their first real run, so this is the most important
-result to send back. Any failure: copy the full output.
+Expected on Linux (as of M0.5, `f3bc307`): typecheck clean, Biome clean, **21 files, 261 passed, 1
+skipped** (the skipped one is Windows-only), secret scan clean, build OK. On Windows the same suite
+shows 247 passed and 15 skipped: the 15 are POSIX permission tests (secrets file,
+log/database/WAL/SHM file modes, private directories, symlink refusal, doctor directory checks).
+They passed on the laptop at M0.1 (244 passed, 1 skipped — see [LINUX_VALIDATION.md](LINUX_VALIDATION.md))
+and in Ubuntu CI. Any failure: copy the full output.
 
 ## 6. Configuration and secrets (3 min)
 
@@ -235,7 +235,7 @@ Return to an earlier AMOS version: `git -C ~/src/AMOS-AI checkout <commit>` and 
 
 ## Done when
 
-- [ ] `npm run check`: 244 passed, 1 skipped (the 15 POSIX tests ran and passed)
+- [ ] `npm run check`: 261 passed, 1 skipped (M0.5; it was 244/1 at M0.1)
 - [ ] `doctor` exit 0, and both negative tests behave as described
 - [ ] Probe report saved outside the repo, with results sent
 - [ ] `bwrap` result noted

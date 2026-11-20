@@ -156,3 +156,21 @@ between file creation and `chmod`. Files are kept `0600` as defence in depth.
   folder you chose.
 - Symlinked data files are refused.
 - Windows relies on profile ACLs, so these checks don't run there.
+
+## ADR-020 Refuse network requests while Node's env-proxy mode is on — adopted (M0.5)
+
+Node 24 can route `fetch` through `HTTP_PROXY` when `NODE_USE_ENV_PROXY=1` or `--use-env-proxy` is
+set. In that mode it tunnels even plain-http `127.0.0.1` requests through the proxy (reproduced in
+`tests/env-proxy.test.ts`). That would move `local_only` traffic to local models through the proxy
+and break offline mode's loopback-only guarantee. Until proxy support is deliberately designed (D8),
+the transport fails closed: it refuses every request in that mode, and `amos doctor` reports it as
+FAIL. Plain proxy variables without the mode are ignored by Node's fetch and are harmless.
+Re-evaluate on Node upgrades.
+
+## ADR-021 `ignore-scripts=true` for npm — adopted (M0.5)
+
+No dependency needs a lifecycle script; the native TypeScript and Biome binaries arrive as optional
+platform packages. Setting `ignore-scripts` in `.npmrc` means a compromised future dependency cannot
+run code during `npm ci`, while `npm run <script>` keeps working. Verified with a clean `npm ci` and
+`npm run check` in a fresh worktree. If a future dependency genuinely needs an install script, that
+needs its own decision.

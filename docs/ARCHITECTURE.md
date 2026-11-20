@@ -458,7 +458,9 @@ mislabelled data), and returns an **EgressClearance**: the serialised body bound
 URL origin, registered in a module-private `WeakSet`. The **HTTP transport** is the only module
 allowed to make requests (a test enforces this). It sends a body only when it carries a genuine
 clearance for the request's origin, sends nothing but `GET` without one, refuses redirects, and in
-offline mode reaches loopback only. What this does not stop is AMOS code that deliberately builds a
+offline mode reaches loopback only. It also refuses every request while Node's env-proxy mode is on
+(`NODE_USE_ENV_PROXY` / `--use-env-proxy`), because Node would then tunnel even `127.0.0.1` traffic
+through `HTTP_PROXY` (M0.5, SEC-01), and it refuses URLs with embedded credentials. What this does not stop is AMOS code that deliberately builds a
 body from data it didn't declare to the gate; that contract is kept by review and tests.
 
 **Taint tracking.** When a task has read untrusted content (web page, downloaded file, unfamiliar
